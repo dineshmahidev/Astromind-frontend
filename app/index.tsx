@@ -14,7 +14,15 @@ export default function Index() {
   const checkAuth = async () => {
     const token = await AsyncStorage.getItem('user_token');
     if (token) {
-      router.replace('/(tabs)');
+      const userData = await AsyncStorage.getItem('user_data');
+      const user = userData ? JSON.parse(userData) : null;
+      const userRole = user?.role ? String(user.role).toLowerCase() : 'user';
+      
+      if (userRole === 'astrologer') {
+          router.replace('/(astro-tabs)');
+      } else {
+          router.replace('/(tabs)');
+      }
     } else {
       router.replace('/auth/login');
     }

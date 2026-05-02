@@ -13,58 +13,29 @@ const REVIEWS = [
   { user: 'Anitha M.', avatar: 'https://cdn-icons-png.flaticon.com/512/4140/4140061.png', comment: 'Helped me with my career decisions. Great insight.', rating: 4, date: '2 weeks ago' },
 ];
 
-const QUESTION_TYPES = [
-  { id: 'career', label: '💼 Career & Job', mins: 5 },
-  { id: 'love', label: '❤️ Love & Marriage', mins: 7 },
-  { id: 'health', label: '🏥 Health', mins: 5 },
-  { id: 'finance', label: '💰 Finance', mins: 6 },
-  { id: 'general', label: '⭐ General Query', mins: 3 },
-];
+// Removed fixed-minute packages to ensure strict per-minute flow
 
 export default function AstrologerDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const [showPayModal, setShowPayModal] = useState(false);
-  const [selectedType, setSelectedType] = useState<any>(null);
-  const [question, setQuestion] = useState('');
-  const [paying, setPaying] = useState(false);
-
-  const price = parseInt(params.price as string || '20');
+  // Price is now strictly enforced at ₹10/min as requested
+  const price = 10;
   const isOnline = params.online === 'true';
 
-  const totalCost = selectedType ? price * selectedType.mins : 0;
-
-  const handlePay = async () => {
-    if (!question.trim()) return Alert.alert('Error', 'Please write your question');
-    setPaying(true);
-
-    try {
-      const userData = await AsyncStorage.getItem('user_data');
-      const user = userData ? JSON.parse(userData) : null;
-      const balance = parseFloat(user?.wallet_balance || '0');
-
-      if (balance < totalCost) {
-        Alert.alert('Insufficient Balance', `You need ₹${totalCost} but have ₹${balance.toFixed(0)}.\n\nPlease add money to your wallet.`, [
-          { text: 'Add Money', onPress: () => { setShowPayModal(false); router.push('/(tabs)/profile'); } },
-          { text: 'Cancel', style: 'cancel' }
-        ]);
-        return;
-      }
-
-      // Deduct from wallet
-      const newBalance = balance - totalCost;
-      const updatedUser = { ...user, wallet_balance: newBalance.toString() };
-      await AsyncStorage.setItem('user_data', JSON.stringify(updatedUser));
-
-      setShowPayModal(false);
-      Alert.alert('✅ Question Sent!', `Your question has been sent to ${params.name}.\nYou will receive a reply within 24 hours.\n\nAmount deducted: ₹${totalCost}`, [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
-    } catch (e) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
-    } finally {
-      setPaying(false);
-    }
+  const startConsultation = (mode: 'audio' | 'video' | 'chat') => {
+    if (!isOnline) return Alert.alert('AstroMind', 'This astrologer is currently offline. Please try again later.');
+    
+    router.push({ 
+        pathname: mode === 'chat' ? '/chat/[id]' : '/chat/[id]', 
+        params: { 
+            id: params.id, 
+            name: params.name, 
+            mode: mode === 'chat' ? 'text' : mode, 
+            price: price,
+            avatar: params.avatar,
+            online: params.online
+        } 
+    });
   };
 
   return (
@@ -138,21 +109,21 @@ export default function AstrologerDetailScreen() {
           <View style={styles.ctaRow}>
             <TouchableOpacity
               style={styles.circleActionBtn}
-              onPress={() => isOnline ? router.push({ pathname: '/chat/[id]', params: { id: params.id, name: params.name, mode: 'audio' } }) : Alert.alert('Offline')}
+              onPress={() => startConsultation('audio')}
             >
               <Ionicons name="call" size={20} color="#fff" />
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.circleActionBtn}
-              onPress={() => isOnline ? router.push({ pathname: '/chat/[id]', params: { id: params.id, name: params.name, mode: 'video' } }) : Alert.alert('Offline')}
+              onPress={() => startConsultation('video')}
             >
               <Ionicons name="videocam" size={20} color="#fff" />
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.askBtn, !isOnline && styles.askBtnDisabled]}
-              onPress={() => isOnline ? setShowPayModal(true) : Alert.alert('Offline')}
+              onPress={() => startConsultation('chat')}
             >
               <Ionicons name="chatbubble" size={18} color="#fff" />
               <Text style={styles.askBtnText}>Chat</Text>
@@ -160,50 +131,7 @@ export default function AstrologerDetailScreen() {
           </View>
         </View>
 
-        {/* PAY MODAL */}
-        <Modal visible={showPayModal} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Ask Your Question</Text>
-                <TouchableOpacity onPress={() => setShowPayModal(false)}><Ionicons name="close" size={24} color="#fff" /></TouchableOpacity>
-              </View>
-
-              <Text style={styles.subLabel}>Select Question Type</Text>
-              <View style={styles.typeGrid}>
-                {QUESTION_TYPES.map(qt => (
-                  <TouchableOpacity key={qt.id} onPress={() => setSelectedType(qt)} style={[styles.typeBtn, selectedType?.id === qt.id && styles.typeBtnActive]}>
-                    <Text style={styles.typeLabel}>{qt.label}</Text>
-                    <Text style={styles.typeMins}>{qt.mins} min • ₹{price * qt.mins}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.subLabel}>Write Your Question</Text>
-              <TextInput
-                style={styles.questionInput}
-                placeholder="Type your question here..."
-                placeholderTextColor="#555"
-                multiline
-                numberOfLines={4}
-                value={question}
-                onChangeText={setQuestion}
-              />
-
-              {selectedType && (
-                <View style={styles.costRow}>
-                  <Text style={styles.costLabel}>Total Cost:</Text>
-                  <Text style={styles.costValue}>₹{totalCost}</Text>
-                </View>
-              )}
-
-              <TouchableOpacity style={[styles.payBtn, !selectedType && { opacity: 0.5 }]} onPress={handlePay} disabled={!selectedType || paying}>
-                <Ionicons name="wallet" size={18} color="#fff" />
-                <Text style={styles.payBtnText}>{paying ? 'Processing...' : `Pay ₹${totalCost || '—'} & Send`}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
+        {/* Pay Modal Removed - Everything is now per-minute in chat */}
       </View>
     </CosmicBackground>
   );

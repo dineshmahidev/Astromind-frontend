@@ -24,7 +24,9 @@ export default function AstrologersScreen() {
     try {
       const response = await fetch(`${BASE_URL}/astrologers`);
       const json = await response.json();
-      if (json.success) setAstrologers(json.data);
+      if (json && json.success) {
+        setAstrologers(json.data);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -33,27 +35,87 @@ export default function AstrologersScreen() {
   };
 
   const filtered = astrologers.filter(a => {
-    const matchSearch = a.name.toLowerCase().includes(search.toLowerCase()) || a.specialization.toLowerCase().includes(search.toLowerCase());
-    const matchFilter = activeFilter === 'All' || (activeFilter === 'Online' && a.is_online) || a.specialization.toLowerCase().includes(activeFilter.toLowerCase());
+    const matchSearch = String(a.name || '').toLowerCase().includes(search.toLowerCase()) || 
+                      String(a.specialization || '').toLowerCase().includes(search.toLowerCase());
+    const matchFilter = activeFilter === 'All' || 
+                      (activeFilter === 'Online' && a.is_online) || 
+                      String(a.specialization || '').toLowerCase().includes(activeFilter.toLowerCase());
     return matchSearch && matchFilter;
   });
+
+  const renderItem = ({ item }: { item: any }) => {
+    const name = String(item.name || '');
+    const spec = String(item.specialization || '');
+    const exp = String(item.experience || '0');
+    const lang = String(item.languages || '');
+    const rating = String(item.rating || '0.0');
+    const price = String(item.price_per_minute || '10');
+    const avatar = String(item.profile_image || 'https://cdn-icons-png.flaticon.com/512/4140/4140048.png');
+
+    return (
+      <TouchableOpacity 
+        style={styles.card} 
+        onPress={() => router.push({ 
+          pathname: '/astrologer/detail', 
+          params: { 
+            id: item.id, 
+            name: name, 
+            speciality: spec, 
+            experience: exp, 
+            rating: rating, 
+            price: price, 
+            language: lang, 
+            avatar: avatar, 
+            online: item.is_online ? 'true' : 'false' 
+          } 
+        })}
+      >
+        <View style={styles.cardLeft}>
+          <View style={styles.avatarWrap}>
+            <Image source={{ uri: avatar }} style={styles.avatar} />
+            {item.is_online ? <View style={styles.onlineDot} /> : null}
+          </View>
+          <View style={styles.info}>
+            <View style={styles.nameRow}>
+              <Text style={styles.name}>{name}</Text>
+              {Number(exp) > 20 ? (
+                <View style={styles.tag}>
+                  <Text style={styles.tagText}>{`Expert`}</Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={styles.spec}>{spec}</Text>
+            <Text style={styles.exp}>{`${exp} yrs • ${lang}`}</Text>
+            <View style={styles.ratingRow}>
+              <Ionicons name="star" size={12} color="#fdcb6e" />
+              <Text style={styles.rating}>{rating}</Text>
+            </View>
+          </View>
+        </View>
+        <View style={styles.cardRight}>
+          <Text style={styles.price}>{`₹${price}/min`}</Text>
+          <View style={styles.consultBtn}>
+            <Text style={styles.consultText}>{`Consult`}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <CosmicBackground>
       <View style={styles.container}>
-        {/* HEADER */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.title}>Our Astrologers</Text>
-            <Text style={styles.subtitle}>{astrologers.filter(a => a.is_online).length} experts online now</Text>
+            <Text style={styles.title}>{`Our Astrologers`}</Text>
+            <Text style={styles.subtitle}>{`${astrologers.filter(a => a.is_online).length} experts online now`}</Text>
           </View>
           <View style={styles.onlineBadge}>
             <View style={styles.greenDot} />
-            <Text style={styles.onlineText}>Live</Text>
+            <Text style={styles.onlineText}>{`Live`}</Text>
           </View>
         </View>
 
-        {/* SEARCH */}
         <View style={styles.searchBox}>
           <Ionicons name="search" size={18} color="#666" />
           <TextInput
@@ -65,78 +127,24 @@ export default function AstrologersScreen() {
           />
         </View>
 
-        {/* FILTERS */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
-          {FILTERS.map(f => (
-            <TouchableOpacity key={f} onPress={() => setActiveFilter(f)} style={[styles.filterBtn, activeFilter === f && styles.filterBtnActive]}>
-              <Text style={[styles.filterText, activeFilter === f && styles.filterTextActive]}>{f}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        <View style={styles.filterRowContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
+            {FILTERS.map(f => (
+              <TouchableOpacity key={f} onPress={() => setActiveFilter(f)} style={[styles.filterBtn, activeFilter === f && styles.filterBtnActive]}>
+                <Text style={[styles.filterText, activeFilter === f && styles.filterTextActive]}>{f}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
 
-        {/* ASTROLOGER LIST */}
         <FlatList
           data={filtered}
-          keyExtractor={item => item.id.toString()}
+          keyExtractor={item => String(item.id)}
           contentContainerStyle={{ paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
           onRefresh={fetchAstrologers}
           refreshing={loading}
-          renderItem={({ item }) => {
-            const astrologerParams = { 
-              id: item.id, 
-              name: item.name, 
-              speciality: item.specialization, 
-              experience: item.experience, 
-              rating: item.rating, 
-              price: item.price_per_minute, 
-              language: item.languages, 
-              avatar: item.profile_image || 'https://cdn-icons-png.flaticon.com/512/4140/4140048.png', 
-              online: item.is_online ? 'true' : 'false' 
-            };
-
-            return (
-              <TouchableOpacity 
-                style={styles.card} 
-                onPress={() => router.push({ 
-                  pathname: '/astrologer/detail', 
-                  params: astrologerParams 
-                })}
-              >
-                <View style={styles.cardLeft}>
-                  <View style={styles.avatarWrap}>
-                    <Image 
-                      source={{ uri: astrologerParams.avatar }} 
-                      style={styles.avatar} 
-                    />
-                    {item.is_online && <View style={styles.onlineDot} />}
-                  </View>
-                  <View style={styles.info}>
-                    <View style={styles.nameRow}>
-                      <Text style={styles.name}>{item.name}</Text>
-                      {item.experience > 20 && (
-                        <View style={styles.tag}>
-                          <Text style={styles.tagText}>Expert</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={styles.spec}>{item.specialization}</Text>
-                    <Text style={styles.exp}>{item.experience} yrs • {item.languages}</Text>
-                    <View style={styles.ratingRow}>
-                      <Ionicons name="star" size={12} color="#fdcb6e" />
-                      <Text style={styles.rating}>{item.rating}</Text>
-                    </View>
-                  </View>
-                </View>
-                <View style={styles.cardRight}>
-                  <Text style={styles.price}>₹{item.price_per_minute}/min</Text>
-                  <View style={styles.consultBtn}>
-                    <Text style={styles.consultText}>Consult</Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            );
-          }}
+          renderItem={renderItem}
         />
       </View>
     </CosmicBackground>
@@ -153,29 +161,10 @@ const styles = StyleSheet.create({
   onlineText: { color: '#00b894', fontWeight: 'bold', fontSize: 13 },
   searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 15, paddingHorizontal: 15, height: 50, gap: 10, marginBottom: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
   searchInput: { flex: 1, color: '#fff', fontSize: 14 },
-  filterRow: { 
-    marginBottom: 20, 
-    maxHeight: 45, // Ensure fixed height for the filter row
-    minHeight: 45 
-  },
-  filterBtn: { 
-    paddingHorizontal: 16, 
-    height: 38, // Fixed height for buttons
-    justifyContent: 'center',
-    borderRadius: 19, 
-    backgroundColor: 'rgba(255,255,255,0.05)', 
-    marginRight: 10, 
-    borderWidth: 1, 
-    borderColor: 'rgba(255,255,255,0.07)' 
-  },
-  filterBtnActive: { 
-    backgroundColor: '#6c5ce7', 
-    borderColor: '#a29bfe',
-    shadowColor: '#6c5ce7',
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 5
-  },
+  filterRowContainer: { marginBottom: 20, height: 45 },
+  filterRow: { flex: 1 },
+  filterBtn: { paddingHorizontal: 16, height: 38, justifyContent: 'center', borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.05)', marginRight: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
+  filterBtnActive: { backgroundColor: '#6c5ce7', borderColor: '#a29bfe' },
   filterText: { color: '#888', fontSize: 13, fontWeight: '600' },
   filterTextActive: { color: '#fff', fontWeight: 'bold' },
   card: { backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 24, padding: 16, marginBottom: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
@@ -192,7 +181,6 @@ const styles = StyleSheet.create({
   exp: { color: '#666', fontSize: 11 },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   rating: { color: '#fdcb6e', fontSize: 12, fontWeight: 'bold' },
-  reviews: { color: '#555', fontSize: 11 },
   cardRight: { alignItems: 'center', gap: 8 },
   price: { color: '#00cec9', fontWeight: 'bold', fontSize: 13 },
   consultBtn: { backgroundColor: '#6c5ce7', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },

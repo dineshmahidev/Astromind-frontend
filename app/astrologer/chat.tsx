@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet, View, Text, TouchableOpacity, ScrollView,
-  TextInput, Image, Modal, Alert, Dimensions, Animated, Platform
+  TextInput, Image, Modal, Alert, Dimensions, Animated, Platform, PermissionsAndroid, ActivityIndicator
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CosmicBackground } from '@/components/CosmicBackground';
@@ -31,6 +31,30 @@ type Message = {
   status?: 'pending' | 'accepted' | 'rejected';
 };
 
+const RasiCell = ({ idx, name, chartData, gridSize, isCenter = false }: any) => {
+  if (isCenter) return <View style={[styles.cell, styles.centerCell, { width: gridSize, height: gridSize }]} />;
+  
+  const planets: string[] = [];
+  if (chartData && idx !== undefined) {
+    Object.entries(chartData).forEach(([pName, data]: [string, any]) => {
+      if (data.rasi === idx) {
+        planets.push(pName.substring(0, 2));
+      }
+    });
+  }
+
+  return (
+    <View style={[styles.cell, { width: gridSize, height: gridSize }]}>
+      <Text style={styles.rasiInitial}>{name}</Text>
+      <View style={styles.cellPlanets}>
+        {planets.map((p, i) => (
+          <Text key={i} style={styles.cellPlanetText}>{p}</Text>
+        ))}
+      </View>
+    </View>
+  );
+};
+
 export default function ConsultationChatScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -53,14 +77,97 @@ export default function ConsultationChatScreen() {
   const engine = useRef<IRtcEngine | null>(null);
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
   const [isJoined, setIsJoined] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(false);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [userRating, setUserRating] = useState(0);
+  const [user, setUser] = useState<any>(null);
+  const [showChartModal, setShowChartModal] = useState(false);
+  const [chartData, setChartData] = useState<any>(null);
+  const [chartLoading, setChartLoading] = useState(false);
+
+  const GRID_SIZE = (width - 60) / 4;
+
+  useEffect(() => {
+    loadExpertProfile();
+  }, []);
+
+  const loadExpertProfile = async () => {
+    const userData = await AsyncStorage.getItem('user_data');
+    if (userData) setUser(JSON.parse(userData));
+  };
+
+  const fetchClientChart = async () => {
+    setChartLoading(true);
+    try {
+      // In a real app, we'd fetch based on params.clientId
+      // For now, using the cached birth_details for demo/stability
+      const birthDetails = await AsyncStorage.getItem('birth_details');
+      if (!birthDetails) return;
+      const details = JSON.parse(birthDetails);
+      const queryParams = new URLSearchParams({
+        day: String(Number(details.day)),
+        month: String(Number(details.month)),
+        year: String(Number(details.year)),
+        hour: String(Number(details.hour)),
+        minute: String(Number(details.minute)),
+        lang: 'ta'
+      }).toString();
+
+      const response = await fetch(`http://10.73.33.139:8000/api/astrology/chart?${queryParams}`, {
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+      });
+      const contentType = response.headers.get('content-type');
+      
+      if (!response.ok || !contentType || !contentType.includes('application/json')) {
+        const errorText = await response.text();
+        console.error('Server error response:', errorText);
+        throw new Error('Server returned an error. Please ensure Laravel is running.');
+      }
+
+      const json = await response.json();
+      if (json.success && json.data) {
+        setChartData(json.data.chart || null);
+      }
+    } catch (e: any) {
+      console.error('Failed to fetch client chart:', e);
+      Alert.alert('Astral Error', 'Could not reach the astrology engine. Please check your server connection.');
+      setShowChartModal(false);
+    } finally {
+      setChartLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showChartModal && !chartData) {
+        fetchClientChart();
+    }
+  }, [showChartModal]);
 
   // Initialize Agora Engine
   useEffect(() => {
+    if (Platform.OS === 'android') {
+        requestAndroidPermissions();
+    }
     setupAgora();
     return () => {
       engine.current?.release();
     };
   }, []);
+
+  const requestAndroidPermissions = async () => {
+    try {
+      await PermissionsAndroid.requestMultiple([
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      ]);
+    } catch (err) {
+      console.warn(err);
+    }
+  };
 
   const setupAgora = async () => {
     try {
@@ -148,57 +255,106 @@ export default function ConsultationChatScreen() {
     return () => clearInterval(recordInterval.current);
   }, [isRecording]);
 
-  const sendTextMessage = () => {
+  const fetchChatHistory = async () => {
+    try {
+        const res = await fetch(`${BASE_URL}/chat/history?user_id=${params.clientId}&astrologer_id=${user.id}`, {
+            headers: { 'Accept': 'application/json' }
+        });
+        const json = await res.json();
+        if (json.success && json.messages.length > 0) {
+            const formatted = json.messages.map((m: any) => ({
+                id: m.id.toString(),
+                sender: m.sender_id === user.id ? 'astrologer' : 'user',
+                type: m.type,
+                content: m.content,
+                time: new Date(m.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                duration: m.duration
+            }));
+            setMessages(formatted);
+            setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+        }
+    } catch (e) {
+        console.error('History Fetch Error:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (user && params.clientId) {
+        fetchChatHistory();
+    }
+  }, [user, params.clientId]);
+
+  const sendTextMessage = async () => {
     if (!text.trim()) return;
-    const msg: Message = {
-      id: Date.now().toString(),
-      sender: 'user',
-      type: 'text',
-      content: text.trim(),
-      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-    };
-    setMessages(prev => [...prev, msg]);
+    const msgContent = text.trim();
     setText('');
 
-    // Simulate astrologer reply after 2 sec
-    setTimeout(() => {
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        sender: 'astrologer',
-        type: 'text',
-        content: 'Thank you for sharing. Based on your birth chart, I can see that... Let me analyze this carefully. 🔮',
-        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-      }]);
-    }, 2000);
+    // Save locally
+    const localMsg: Message = {
+      id: Date.now().toString(),
+      sender: 'astrologer',
+      type: 'text',
+      content: msgContent,
+      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+    };
+    setMessages(prev => [...prev, localMsg]);
+
+    // Save to DB
+    try {
+        await fetch(`${BASE_URL}/chat/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({
+                sender_id: user.id,
+                receiver_id: params.clientId,
+                content: msgContent,
+                type: 'text',
+                consultation_id: params.consultationId || 1
+            })
+        });
+    } catch (e) {
+        console.error('Message Save Error:', e);
+    }
+
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   };
 
-  const handleVoiceRecord = () => {
+  const handleVoiceRecord = async () => {
     if (isRecording) {
       // Stop recording & send
       setIsRecording(false);
       const duration = recordSeconds;
-      const msg: Message = {
+      
+      // Save locally
+      const localMsg: Message = {
         id: Date.now().toString(),
-        sender: 'user',
+        sender: 'astrologer', // Experts send voice too
         type: 'voice',
         content: 'Voice message',
         time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
         duration,
       };
-      setMessages(prev => [...prev, msg]);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+      setMessages(prev => [...prev, localMsg]);
 
-      // Simulate astrologer listening & replying
-      setTimeout(() => {
-        setMessages(prev => [...prev, {
-          id: (Date.now() + 1).toString(),
-          sender: 'astrologer',
-          type: 'text',
-          content: 'I received your voice message. Let me respond to your query... 🎙️',
-          time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        }]);
-      }, 3000);
+      // Save to DB
+      try {
+          await fetch(`${BASE_URL}/chat/save`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              body: JSON.stringify({
+                  sender_id: user.id,
+                  receiver_id: params.clientId,
+                  content: 'Voice message',
+                  type: 'voice',
+                  duration: duration,
+                  consultation_id: params.consultationId || 1
+              })
+          });
+      } catch (e) {
+          console.error('Voice Save Error:', e);
+      }
+
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     } else {
       setIsRecording(true);
     }
@@ -274,21 +430,62 @@ export default function ConsultationChatScreen() {
     }
   };
 
-  const endCall = () => {
+  const endCall = async () => {
     engine.current?.leaveChannel();
     clearInterval(callInterval.current);
     setInCall(false);
-    const mins = Math.floor(callTimer / 60);
-    const secs = callTimer % 60;
+    
+    const totalSeconds = callTimer;
+    const totalMinutes = Math.max(1, Math.ceil(totalSeconds / 60));
+    const pricePerMin = parseInt(params.price as string) || 10;
+    const totalCost = totalMinutes * pricePerMin;
+
+    // Save Session to DB
+    try {
+        await fetch(`${BASE_URL}/consultation/end`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({
+                consultation_id: params.consultationId || 1,
+                duration: totalSeconds,
+                amount: totalCost
+            })
+        });
+    } catch (e) {
+        console.error('Session End Error:', e);
+    }
+
     setMessages(prev => [...prev, {
       id: Date.now().toString(),
       sender: 'astrologer',
       type: 'text',
-      content: `Call ended. Duration: ${mins}m ${secs}s. Thank you for consulting with me! 🙏`,
+      content: `Call Summary:\n⏱️ Duration: ${formatTime(totalSeconds)}\n💰 Total Cost: ₹${totalCost} (at ₹${pricePerMin}/min)\n\nThe amount will be deducted from your wallet. Thank you for the consultation! 🙏`,
       time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
     }]);
+    
     setCallTimer(0);
     setCallType(null);
+
+    // Show rating modal after 1.5 seconds
+    setTimeout(() => {
+        setShowRatingModal(true);
+    }, 1500);
+  };
+
+  const toggleMute = () => {
+    const newState = !isMuted;
+    setIsMuted(newState);
+    engine.current?.muteLocalAudioStream(newState);
+  };
+
+  const toggleCamera = () => {
+    const newState = !isCameraOff;
+    setIsCameraOff(newState);
+    engine.current?.muteLocalVideoStream(newState);
+  };
+
+  const flipCamera = () => {
+    engine.current?.switchCamera();
   };
 
   const formatTime = (secs: number) => {
@@ -313,13 +510,88 @@ export default function ConsultationChatScreen() {
               <Text style={styles.statusText}>{params.online === 'true' ? 'Online' : 'Offline'}</Text>
             </View>
           </View>
-          <TouchableOpacity onPress={() => setShowCallModal(true)} style={styles.callIconBtn}>
-            <Ionicons name="call" size={20} color="#6c5ce7" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => initiateCall('video')} style={styles.callIconBtn}>
-            <Ionicons name="videocam" size={20} color="#00cec9" />
+          {/* EXPERT ONLY: Delete Chat */}
+          <TouchableOpacity 
+            onPress={() => {
+                Alert.alert('Delete Chat', 'Are you sure you want to delete this consultation history permanently?', [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: () => router.back() }
+                ]);
+            }} 
+            style={styles.deleteBtn}
+          >
+            <Ionicons name="trash-outline" size={20} color="#ff7675" />
           </TouchableOpacity>
         </View>
+
+        {/* EXPERT CONTEXT: Auto-Birth Details Sharing */}
+        <View style={styles.contextBanner}>
+          <View style={styles.contextHeader}>
+            <View style={styles.contextLabel}>
+              <Ionicons name="sparkles" size={12} color="#ffd700" />
+              <Text style={styles.contextLabelText}>ஜாதக விவரங்கள் (Revealed)</Text>
+            </View>
+            <Text style={styles.contextTime}>4:20 PM</Text>
+          </View>
+
+          <View style={styles.contextGrid}>
+            <View style={styles.contextItem}>
+              <Text style={styles.contextVal}>இராசி</Text>
+              <Text style={styles.contextKey}>மேஷம்</Text>
+            </View>
+            <View style={styles.contextItem}>
+              <Text style={styles.contextVal}>நட்சத்திரம்</Text>
+              <Text style={styles.contextKey}>அசுவினி</Text>
+            </View>
+            <View style={styles.contextItem}>
+              <Text style={styles.contextVal}>தசா புத்தி</Text>
+              <Text style={styles.contextKey}>ராகு / குரு</Text>
+            </View>
+          </View>
+          <TouchableOpacity style={styles.viewChartBtn} onPress={() => setShowChartModal(true)}>
+            <Text style={styles.viewChartText}>முழு ஜாதகம் (ராசி கட்டம்)</Text>
+            <Ionicons name="expand-outline" size={14} color="#6c5ce7" />
+          </TouchableOpacity>
+        </View>
+
+        {/* CHART MODAL (RASI KATTAM) */}
+        <Modal visible={showChartModal} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.chartModalCard}>
+              <View style={styles.chartModalHeader}>
+                <Text style={styles.chartModalTitle}>பிறப்பு ஜாதகம் (ராசி)</Text>
+                <TouchableOpacity onPress={() => setShowChartModal(false)} style={styles.closeBtn}>
+                  <Ionicons name="close" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {chartLoading ? (
+                <View style={styles.chartLoadingBox}>
+                  <ActivityIndicator size="large" color="#6c5ce7" />
+                  <Text style={styles.loadingText}>ஜாதகம் கணிக்கப்படுகிறது...</Text>
+                </View>
+              ) : (
+                <View style={styles.rasiKattamWrap}>
+                   <View style={styles.chartGrid}>
+                    <View style={styles.gridRow}>
+                      <RasiCell idx={11} name="மீ" chartData={chartData} gridSize={GRID_SIZE} /><RasiCell idx={0} name="மே" chartData={chartData} gridSize={GRID_SIZE} /><RasiCell idx={1} name="ரி" chartData={chartData} gridSize={GRID_SIZE} /><RasiCell idx={2} name="மி" chartData={chartData} gridSize={GRID_SIZE} />
+                    </View>
+                    <View style={styles.gridRow}>
+                      <RasiCell idx={10} name="கு" chartData={chartData} gridSize={GRID_SIZE} /><View style={{ width: GRID_SIZE * 2, height: GRID_SIZE, backgroundColor: 'rgba(108,92,231,0.02)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' }} /><RasiCell idx={3} name="கட" chartData={chartData} gridSize={GRID_SIZE} />
+                    </View>
+                    <View style={styles.gridRow}>
+                      <RasiCell idx={9} name="ம" chartData={chartData} gridSize={GRID_SIZE} /><View style={{ width: GRID_SIZE * 2, height: GRID_SIZE, backgroundColor: 'rgba(108,92,231,0.02)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' }} /><RasiCell idx={4} name="சி" chartData={chartData} gridSize={GRID_SIZE} />
+                    </View>
+                    <View style={styles.gridRow}>
+                      <RasiCell idx={8} name="த" chartData={chartData} gridSize={GRID_SIZE} /><RasiCell idx={7} name="வி" chartData={chartData} gridSize={GRID_SIZE} /><RasiCell idx={6} name="து" chartData={chartData} gridSize={GRID_SIZE} /><RasiCell idx={5} name="க" chartData={chartData} gridSize={GRID_SIZE} />
+                    </View>
+                  </View>
+                  <Text style={styles.expertNote}>* கிரக நிலைகள் தானாகவே கணக்கிடப்பட்டுள்ளன.</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </Modal>
 
         {/* MESSAGES */}
         <ScrollView
@@ -370,11 +642,71 @@ export default function ConsultationChatScreen() {
           ))}
         </ScrollView>
 
-        {/* ACTIVE CALL BANNER */}
-        {inCall && (
+        {/* FULL SCREEN VIDEO CALL OVERLAY */}
+        {inCall && callType === 'video' && (
+          <Modal visible={true} animationType="fade" transparent={false}>
+            <View style={styles.fullVideoContainer}>
+              {/* REMOTE VIEW (The Client) */}
+              {remoteUid ? (
+                <RtcSurfaceView
+                  canvas={{ uid: remoteUid }}
+                  style={styles.remoteVideo}
+                />
+              ) : (
+                <View style={styles.videoPlaceholder}>
+                  <ActivityIndicator size="large" color="#6c5ce7" />
+                  <Text style={styles.placeholderText}>Connecting to client...</Text>
+                </View>
+              )}
+
+              {/* LOCAL VIEW (The Expert - Picture in Picture) */}
+              <View style={styles.localVideoContainer}>
+                {!isCameraOff ? (
+                  <RtcSurfaceView
+                    canvas={{ uid: 0 }}
+                    style={styles.localVideo}
+                  />
+                ) : (
+                  <View style={[styles.localVideo, { backgroundColor: '#111', justifyContent: 'center', alignItems: 'center' }]}>
+                    <Ionicons name="videocam-off" size={20} color="#333" />
+                  </View>
+                )}
+              </View>
+
+              {/* CONTROLS */}
+              <View style={styles.videoControls}>
+                <View style={styles.callInfo}>
+                  <Text style={styles.callName}>{params.name}</Text>
+                  <Text style={styles.callTimer}>{formatTime(callTimer)}</Text>
+                </View>
+                
+                <View style={styles.controlRow}>
+                  <TouchableOpacity onPress={toggleMute} style={[styles.controlBtn, isMuted && styles.controlBtnActive]}>
+                    <Ionicons name={isMuted ? "mic-off" : "mic"} size={26} color="#fff" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity onPress={endCall} style={styles.hangupBtn}>
+                    <Ionicons name="call" size={30} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity onPress={toggleCamera} style={[styles.controlBtn, isCameraOff && styles.controlBtnActive]}>
+                    <Ionicons name={isCameraOff ? "videocam-off" : "videocam"} size={26} color="#fff" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity onPress={flipCamera} style={styles.controlBtn}>
+                    <Ionicons name="camera-reverse" size={26} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* ACTIVE AUDIO CALL BANNER */}
+        {inCall && callType === 'audio' && (
           <View style={styles.callBanner}>
-            <Ionicons name={callType === 'video' ? 'videocam' : 'call'} size={20} color="#fff" />
-            <Text style={styles.callBannerText}>{callType === 'video' ? 'Video' : 'Audio'} Call • {formatTime(callTimer)}</Text>
+            <Ionicons name="call" size={20} color="#fff" />
+            <Text style={styles.callBannerText}>Audio Call • {formatTime(callTimer)}</Text>
             <TouchableOpacity onPress={endCall} style={styles.endCallBtn}>
               <Ionicons name="call" size={18} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
               <Text style={styles.endCallText}>End</Text>
@@ -411,6 +743,49 @@ export default function ConsultationChatScreen() {
             </>
           )}
         </View>
+
+        {/* RATING MODAL */}
+        <Modal visible={showRatingModal} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.ratingCard}>
+              <View style={styles.ratingHeader}>
+                <Ionicons name="star" size={40} color="#fdcb6e" />
+                <Text style={styles.ratingTitle}>Rate Your Experience</Text>
+                <Text style={styles.ratingSub}>How was your consultation with {params.name}?</Text>
+              </View>
+
+              <View style={styles.starsContainer}>
+                {[1, 2, 3, 4, 5].map(star => (
+                  <TouchableOpacity key={star} onPress={() => setUserRating(star)}>
+                    <Ionicons 
+                      name={star <= userRating ? "star" : "star-outline"} 
+                      size={40} 
+                      color={star <= userRating ? "#fdcb6e" : "rgba(255,255,255,0.2)"} 
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.submitRatingBtn, userRating === 0 && { opacity: 0.5 }]} 
+                onPress={() => {
+                  if (userRating === 0) return;
+                  setShowRatingModal(false);
+                  Alert.alert('Thank You!', 'Your feedback helps us improve our services. 🙏', [
+                    { text: 'OK', onPress: () => router.back() }
+                  ]);
+                }}
+                disabled={userRating === 0}
+              >
+                <Text style={styles.submitRatingText}>Submit Feedback</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity onPress={() => { setShowRatingModal(false); router.back(); }}>
+                <Text style={styles.skipText}>Skip</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         {/* CALL TYPE MODAL */}
         <Modal visible={showCallModal} transparent animationType="fade">
@@ -461,41 +836,55 @@ export default function ConsultationChatScreen() {
 
             {/* Small Window (Picture in Picture) */}
             {remoteUid && (
-              /* Only show small window for Caller AFTER Astrologer joins */
               <View style={styles.localVideo}>
-                <RtcSurfaceView
-                  canvas={{ uid: 0 }}
-                  style={{ flex: 1 }}
-                />
+                {!isCameraOff ? (
+                  <RtcSurfaceView
+                    canvas={{ uid: 0 }}
+                    style={{ flex: 1 }}
+                  />
+                ) : (
+                  <View style={[styles.videoPlaceholder, { backgroundColor: '#111' }]}>
+                    <Ionicons name="videocam-off" size={24} color="#555" />
+                  </View>
+                )}
               </View>
             )}
 
-            {/* If Astrologer not here, show a small status badge */}
+            {/* If Astrologer not here, show a centered waiting badge at bottom */}
             {!remoteUid && (
-              <View style={styles.waitingBadge}>
+              <View style={styles.centeredWaiting}>
                 <View style={styles.loadingDot} />
-                <Text style={styles.waitingText}>Connecting to {params.name}...</Text>
+                <Text style={styles.waitingText}>Waiting for {params.name}... ({formatTime(callTimer)})</Text>
               </View>
             )}
 
             {/* Call Controls Overlay */}
             <View style={styles.videoControls}>
               <View style={styles.videoHeader}>
-                <Text style={styles.videoTimer}>{formatTime(callTimer)}</Text>
+                {remoteUid && <Text style={styles.videoTimer}>{formatTime(callTimer)}</Text>}
                 <Text style={styles.videoName}>{params.name}</Text>
               </View>
 
               <View style={styles.videoFooter}>
-                <TouchableOpacity style={styles.videoIconBtn}>
-                  <Ionicons name="mic" size={24} color="#fff" />
+                <TouchableOpacity onPress={toggleMute} style={[styles.videoIconBtn, isMuted && { backgroundColor: '#ff7675' }]}>
+                  <Ionicons name={isMuted ? "mic-off" : "mic"} size={26} color="#fff" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={endCall} style={[styles.videoIconBtn, { backgroundColor: '#ff7675' }]}>
-                  <Ionicons name="call" size={24} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
+                
+                <TouchableOpacity onPress={endCall} style={[styles.videoIconBtn, { backgroundColor: '#ff4757', width: 72, height: 72 }]}>
+                  <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.videoIconBtn}>
-                  <Ionicons name="camera-reverse" size={24} color="#fff" />
+
+                <TouchableOpacity onPress={toggleCamera} style={[styles.videoIconBtn, isCameraOff && { backgroundColor: '#ff7675' }]}>
+                  <Ionicons name={isCameraOff ? "videocam-off" : "videocam"} size={26} color="#fff" />
                 </TouchableOpacity>
               </View>
+            </View>
+
+            {/* Top Right Controls */}
+            <View style={styles.topRightControls}>
+              <TouchableOpacity onPress={flipCamera} style={styles.topRightBtn}>
+                <Ionicons name="camera-reverse" size={24} color="#fff" />
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -513,7 +902,55 @@ const styles = StyleSheet.create({
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   statusText: { color: '#888', fontSize: 12 },
   callIconBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' },
+  deleteBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(255,118,117,0.1)', justifyContent: 'center', alignItems: 'center' },
+  
+  contextBanner: { backgroundColor: 'rgba(108,92,231,0.05)', margin: 10, borderRadius: 20, padding: 15, borderWidth: 1, borderColor: 'rgba(108,92,231,0.15)' },
+  contextHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  contextLabel: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,215,0,0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  contextLabelText: { color: '#ffd700', fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase' },
+  contextTime: { color: '#555', fontSize: 10, fontWeight: 'bold' },
+  contextGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  contextItem: { alignItems: 'flex-start' },
+  contextKey: { color: '#fff', fontSize: 14, fontWeight: 'bold', marginTop: 2 },
+  contextVal: { color: '#666', fontSize: 10, textTransform: 'uppercase' },
+  viewChartBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
+  viewChartText: { color: '#6c5ce7', fontSize: 12, fontWeight: 'bold' },
+
+  // RASI KATTAM STYLES
+  cell: { borderSize: 1, borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 4, justifyContent: 'space-between' },
+  centerCell: { backgroundColor: 'rgba(108,92,231,0.05)', borderWidth: 0 },
+  rasiInitial: { color: '#6c5ce7', fontSize: 7, fontWeight: 'bold' },
+  cellPlanets: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
+  cellPlanetText: { color: '#fff', fontSize: 9, fontWeight: 'bold' },
+  
+  chartModalCard: { backgroundColor: '#0d0d1f', borderRadius: 30, padding: 25, width: width * 0.9, borderWidth: 1, borderColor: 'rgba(108,92,231,0.3)' },
+  chartModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  chartModalTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  chartLoadingBox: { height: 250, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { color: '#6c5ce7', fontSize: 14, marginTop: 15, fontWeight: '500' },
+  rasiKattamWrap: { alignItems: 'center' },
+  chartGrid: { backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 15, padding: 5, borderWidth: 2, borderColor: '#6c5ce7' },
+  gridRow: { flexDirection: 'row' },
+  expertNote: { color: '#444', fontSize: 10, marginTop: 15, fontStyle: 'italic', textAlign: 'center' },
+
   messagesContent: { padding: 15, paddingBottom: 20 },
+
+  // VIDEO CALL STYLES
+  fullVideoContainer: { flex: 1, backgroundColor: '#000' },
+  remoteVideo: { flex: 1 },
+  localVideoContainer: { position: 'absolute', top: 60, right: 20, width: 100, height: 150, borderRadius: 15, overflow: 'hidden', borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)', backgroundColor: '#111' },
+  localVideo: { flex: 1 },
+  videoPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a0a' },
+  placeholderText: { color: '#666', fontSize: 14, marginTop: 15 },
+  videoControls: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 30, paddingBottom: 50, backgroundColor: 'rgba(0,0,0,0.4)' },
+  controlRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
+  controlBtn: { width: 54, height: 54, borderRadius: 27, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
+  controlBtnActive: { backgroundColor: '#ff7675' },
+  hangupBtn: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#ff4757', justifyContent: 'center', alignItems: 'center' },
+  callInfo: { alignItems: 'center', marginBottom: 30 },
+  callName: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
+  callTimer: { color: '#00cec9', fontSize: 16, fontWeight: 'bold', marginTop: 5 },
+
   msgRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end', gap: 8 },
   msgRowRight: { flexDirection: 'row-reverse' },
   msgAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#131326' },
@@ -560,9 +997,21 @@ const styles = StyleSheet.create({
   videoHeader: { alignItems: 'center', paddingTop: 20 },
   videoTimer: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 5 },
   videoName: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
-  videoFooter: { flexDirection: 'row', justifyContent: 'center', gap: 30 },
-  videoIconBtn: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
-  waitingBadge: { position: 'absolute', top: 60, left: 20, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20, gap: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  waitingText: { color: '#fff', fontSize: 14, fontWeight: '500' },
+  videoFooter: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 25 },
+  videoIconBtn: { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', alignItems: 'center' },
+  topRightControls: { position: 'absolute', top: 50, right: 20, gap: 15 },
+  topRightBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  centeredWaiting: { position: 'absolute', bottom: 150, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 25, gap: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  waitingText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
   loadingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#00cec9' },
+
+  // Rating Modal Styles
+  ratingCard: { backgroundColor: '#0d0d1f', borderRadius: 30, padding: 30, width: width * 0.85, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(108,92,231,0.3)' },
+  ratingHeader: { alignItems: 'center', marginBottom: 25 },
+  ratingTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold', marginTop: 15 },
+  ratingSub: { color: '#888', fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20 },
+  starsContainer: { flexDirection: 'row', gap: 12, marginBottom: 30 },
+  submitRatingBtn: { backgroundColor: '#6c5ce7', width: '100%', paddingVertical: 16, borderRadius: 18, alignItems: 'center', shadowColor: '#6c5ce7', shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
+  submitRatingText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  skipText: { color: '#555', fontSize: 14, marginTop: 20, fontWeight: '500' },
 });

@@ -21,6 +21,7 @@ export default function RootLayout() {
             headerShown: false,
           }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="(astro-tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="birth-details" options={{ headerShown: false }} />
           <Stack.Screen name="horoscope" options={{ headerShown: false }} />
           <Stack.Screen name="matching" options={{ headerShown: false }} />

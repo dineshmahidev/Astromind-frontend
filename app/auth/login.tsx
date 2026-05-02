@@ -11,29 +11,61 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [tapCount, setTapCount] = useState(0);
+  const [serverUrl, setServerUrl] = useState('http://10.73.33.139:8000');
+  const [showConfig, setShowConfig] = useState(false);
+
+  React.useEffect(() => {
+    AsyncStorage.getItem('custom_server_url').then(val => {
+      if (val) setServerUrl(val);
+    });
+  }, []);
+
+  const handleLogoTap = () => {
+    const newCount = tapCount + 1;
+    setTapCount(newCount);
+    if (newCount >= 3) {
+      setShowConfig(true);
+      setTapCount(0);
+    }
+  };
 
   const handleLogin = async () => {
     if (!email || !password) return Alert.alert('Error', 'Please fill all fields');
     setLoading(true);
     try {
-      const response = await fetch('http://10.73.33.139:8000/api/auth/login', {
+      const response = await fetch(`${serverUrl}/api/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
       const json = await response.json();
       if (json.success) {
         await AsyncStorage.setItem('user_token', 'true');
         await AsyncStorage.setItem('user_data', JSON.stringify(json.user));
-        await AsyncStorage.setItem('birth_details', JSON.stringify({
-            name: json.user.name,
-            day: json.user.dob.split('-')[2],
-            month: json.user.dob.split('-')[1],
-            year: json.user.dob.split('-')[0],
-            hour: json.user.tob.split(':')[0],
-            minute: json.user.tob.split(':')[1]
-        }));
-        router.replace('/(tabs)');
+        
+        // Only set birth details if it's a regular user (astrologers may not have these fields)
+        if (json.user.role === 'user' && json.user.dob) {
+            await AsyncStorage.setItem('birth_details', JSON.stringify({
+                name: json.user.name,
+                day: json.user.dob.split('-')[2],
+                month: json.user.dob.split('-')[1],
+                year: json.user.dob.split('-')[0],
+                hour: json.user.tob ? json.user.tob.split(':')[0] : '12',
+                minute: json.user.tob ? json.user.tob.split(':')[1] : '00'
+            }));
+        }
+
+        // Complete Refresh Logic: Redirect based on Role (Case Insensitive)
+        const userRole = String(json.user.role).toLowerCase();
+        
+        if (userRole === 'astrologer') {
+            console.log('Navigating to Astrologer Workspace');
+            router.replace('/(astro-tabs)');
+        } else {
+            console.log('Navigating to User Tabs');
+            router.replace('/(tabs)');
+        }
       } else {
         Alert.alert('Login Failed', json.message);
       }
@@ -47,13 +79,32 @@ export default function LoginScreen() {
   return (
     <CosmicBackground>
       <View style={styles.container}>
-        <View style={styles.logoContainer}>
+        <TouchableOpacity style={styles.logoContainer} activeOpacity={0.8} onPress={handleLogoTap}>
             <Ionicons name="moon" size={80} color="#ffffff" />
             <ThemedText type="title" style={styles.appName}>AstroMind</ThemedText>
             <Text style={styles.tagline}>Unlock Your Cosmic Potential</Text>
-        </View>
+        </TouchableOpacity>
 
         <View style={styles.form}>
+          {showConfig && (
+            <View style={[styles.inputBox, { borderColor: '#00cec9', borderStyle: 'dashed' }]}>
+              <Ionicons name="server-outline" size={20} color="#00cec9" />
+              <TextInput 
+                style={styles.input} 
+                placeholder="Server URL (e.g. http://ip:8000)" 
+                placeholderTextColor="#666" 
+                value={serverUrl}
+                onChangeText={(val) => {
+                  setServerUrl(val);
+                  AsyncStorage.setItem('custom_server_url', val);
+                }}
+              />
+              <TouchableOpacity onPress={() => setShowConfig(false)}>
+                <Ionicons name="checkmark-circle" size={24} color="#00cec9" />
+              </TouchableOpacity>
+            </View>
+          )}
+
           <View style={styles.inputBox}>
             <Ionicons name="mail-outline" size={20} color="#666" />
             <TextInput 
