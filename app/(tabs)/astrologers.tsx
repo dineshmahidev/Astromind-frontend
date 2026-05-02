@@ -82,34 +82,61 @@ export default function AstrologersScreen() {
           showsVerticalScrollIndicator={false}
           onRefresh={fetchAstrologers}
           refreshing={loading}
-          renderItem={({ item }) => (
-            <TouchableOpacity style={styles.card} onPress={() => router.push({ pathname: '/astrologer/detail', params: { id: item.id, name: item.name, speciality: item.specialization, experience: item.experience, rating: item.rating, price: item.price_per_minute, language: item.languages, avatar: item.profile_image || 'https://cdn-icons-png.flaticon.com/512/4140/4140048.png', online: item.is_online ? 'true' : 'false' } })}>
-              <View style={styles.cardLeft}>
-                <View style={styles.avatarWrap}>
-                  <Image source={{ uri: item.profile_image || 'https://cdn-icons-png.flaticon.com/512/4140/4140048.png' }} style={styles.avatar} />
-                  {item.is_online && <View style={styles.onlineDot} />}
-                </View>
-                <View style={styles.info}>
-                  <View style={styles.nameRow}>
-                    <Text style={styles.name}>{item.name}</Text>
-                    {item.experience > 20 ? <View style={styles.tag}><Text style={styles.tagText}>Expert</Text></View> : null}
+          renderItem={({ item }) => {
+            const astrologerParams = { 
+              id: item.id, 
+              name: item.name, 
+              speciality: item.specialization, 
+              experience: item.experience, 
+              rating: item.rating, 
+              price: item.price_per_minute, 
+              language: item.languages, 
+              avatar: item.profile_image || 'https://cdn-icons-png.flaticon.com/512/4140/4140048.png', 
+              online: item.is_online ? 'true' : 'false' 
+            };
+
+            return (
+              <TouchableOpacity 
+                style={styles.card} 
+                onPress={() => router.push({ 
+                  pathname: '/astrologer/detail', 
+                  params: astrologerParams 
+                })}
+              >
+                <View style={styles.cardLeft}>
+                  <View style={styles.avatarWrap}>
+                    <Image 
+                      source={{ uri: astrologerParams.avatar }} 
+                      style={styles.avatar} 
+                    />
+                    {item.is_online && <View style={styles.onlineDot} />}
                   </View>
-                  <Text style={styles.spec}>{item.specialization}</Text>
-                  <Text style={styles.exp}>{item.experience} yrs • {item.languages}</Text>
-                  <View style={styles.ratingRow}>
-                    <Ionicons name="star" size={12} color="#fdcb6e" />
-                    <Text style={styles.rating}>{item.rating}</Text>
+                  <View style={styles.info}>
+                    <View style={styles.nameRow}>
+                      <Text style={styles.name}>{item.name}</Text>
+                      {item.experience > 20 && (
+                        <View style={styles.tag}>
+                          <Text style={styles.tagText}>Expert</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.spec}>{item.specialization}</Text>
+                    <Text style={styles.exp}>{item.experience} yrs • {item.languages}</Text>
+                    <View style={styles.ratingRow}>
+                      <Ionicons name="star" size={12} color="#fdcb6e" />
+                      <Text style={styles.rating}>{item.rating}</Text>
+                    </View>
                   </View>
                 </View>
-              </View>
-              <View style={styles.cardRight}>
-                <Text style={styles.price}>₹{item.price_per_minute}/min</Text>
-                <TouchableOpacity style={styles.consultBtn} onPress={() => router.push({ pathname: '/astrologer/detail', params: { id: item.id, name: item.name, speciality: item.specialization, experience: item.experience, rating: item.rating, price: item.price_per_minute, language: item.languages, avatar: item.profile_image || 'https://cdn-icons-png.flaticon.com/512/4140/4140048.png', online: item.is_online ? 'true' : 'false' } })}>
-                  <Text style={styles.consultText}>Consult</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          )}
+                <View style={styles.cardRight}>
+                  <Text style={styles.price}>₹{item.price_per_minute}/min</Text>
+                  <View style={styles.consultBtn}>
+                    <Text style={styles.consultText}>Consult</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
         />
       </View>
     </CosmicBackground>

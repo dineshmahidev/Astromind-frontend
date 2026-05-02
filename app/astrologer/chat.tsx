@@ -47,6 +47,7 @@ export default function ConsultationChatScreen() {
   const [inCall, setInCall] = useState(false);
   const [callTimer, setCallTimer] = useState(0);
   const recordAnim = useRef(new Animated.Value(1)).current;
+  const recordInterval = useRef<any>(null);
   const callInterval = useRef<any>(null);
   const autoStartHandled = useRef(false);
   const engine = useRef<IRtcEngine | null>(null);
@@ -441,28 +442,41 @@ export default function ConsultationChatScreen() {
         {/* VIDEO CALL OVERLAY */}
         {inCall && callType === 'video' && (
           <View style={styles.videoOverlay}>
-            {/* Remote Video (Astrologer) */}
+            {/* Main Video Area */}
             <View style={styles.remoteVideo}>
               {remoteUid ? (
+                /* Show Astrologer when they join */
                 <RtcSurfaceView
                   canvas={{ uid: remoteUid }}
                   style={{ flex: 1 }}
                 />
               ) : (
-                <View style={styles.videoPlaceholder}>
-                  <Image source={{ uri: params.avatar as string }} style={styles.placeholderAvatar} />
-                  <Text style={styles.placeholderText}>Waiting for {params.name}...</Text>
-                </View>
+                /* If Astrologer is not here yet, show Caller Full Screen */
+                <RtcSurfaceView
+                  canvas={{ uid: 0 }}
+                  style={{ flex: 1 }}
+                />
               )}
             </View>
 
-            {/* Local Video (User - Picture in Picture) */}
-            <View style={styles.localVideo}>
-              <RtcSurfaceView
-                canvas={{ uid: 0 }}
-                style={{ flex: 1 }}
-              />
-            </View>
+            {/* Small Window (Picture in Picture) */}
+            {remoteUid && (
+              /* Only show small window for Caller AFTER Astrologer joins */
+              <View style={styles.localVideo}>
+                <RtcSurfaceView
+                  canvas={{ uid: 0 }}
+                  style={{ flex: 1 }}
+                />
+              </View>
+            )}
+
+            {/* If Astrologer not here, show a small status badge */}
+            {!remoteUid && (
+              <View style={styles.waitingBadge}>
+                <View style={styles.loadingDot} />
+                <Text style={styles.waitingText}>Connecting to {params.name}...</Text>
+              </View>
+            )}
 
             {/* Call Controls Overlay */}
             <View style={styles.videoControls}>
@@ -548,4 +562,7 @@ const styles = StyleSheet.create({
   videoName: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
   videoFooter: { flexDirection: 'row', justifyContent: 'center', gap: 30 },
   videoIconBtn: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
+  waitingBadge: { position: 'absolute', top: 60, left: 20, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20, gap: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  waitingText: { color: '#fff', fontSize: 14, fontWeight: '500' },
+  loadingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#00cec9' },
 });
