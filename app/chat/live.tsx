@@ -30,17 +30,28 @@ export default function LiveCallScreen() {
 
             // Fetch Zego Config from Backend
             const res = await fetch('http://10.22.133.139:8000/api/settings/zego');
+            
+            // Check if response is JSON
+            const contentType = res.headers.get("content-type");
+            if (!res.ok || !contentType || !contentType.includes("application/json")) {
+                const text = await res.text();
+                console.error('Non-JSON response received:', text.substring(0, 200));
+                throw new Error('Backend returned an invalid response (not JSON). Please check your backend routes and PHP syntax.');
+            }
+
             const json = await res.json();
-            if (json.success) {
+            if (json.success && json.app_id && json.app_sign) {
                 setZegoConfig({
                     appID: Number(json.app_id),
                     appSign: json.app_sign
                 });
             } else {
-                Alert.alert('Error', 'Failed to fetch call configuration');
+                console.error('Invalid Zego config data:', json);
+                Alert.alert('Configuration Error', 'ZegoCloud keys (ZEGO_APP_ID/ZEGO_APP_SIGN) are missing in the backend .env file.');
             }
-        } catch (e) {
-            console.error(e);
+        } catch (e: any) {
+            console.error('Call initialization error:', e);
+            Alert.alert('Call Error', e.message || 'Failed to initialize call. Check your internet connection and backend status.');
         } finally {
             setLoading(false);
         }
