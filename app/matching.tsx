@@ -1,3 +1,4 @@
+// Force refresh
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, ScrollView, TouchableOpacity, TextInput, Text, Alert, Modal, Dimensions, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -7,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useLanguage } from '@/context/LanguageContext';
+import { BASE_URL } from '@/constants/Config';
 
 const { width, height } = Dimensions.get('window');
 
@@ -110,7 +112,7 @@ export default function MatchingScreen() {
       }
       const userData = JSON.parse(userDataStr);
 
-      const response = await fetch(`http://10.73.33.139:8000/api/astrology/match?girl_star=${userData.nakshatra}&boy_star=${star}&lang=${targetLang}`, {
+      const response = await fetch(`${BASE_URL}/astrology/match?girl_star=${userData.nakshatra}&boy_star=${star}&lang=${targetLang}`, {
         headers: { 'Accept': 'application/json' }
       });
       const json = await response.json();
@@ -162,7 +164,7 @@ export default function MatchingScreen() {
           day: partnerData.day, month: partnerData.month, year: partnerData.year,
           hour: partnerData.hour, minute: partnerData.minute, second: '0'
         }).toString();
-        const response = await fetch(`http://10.73.33.139:8000/api/astrology/details?${queryParams}`, { headers: { 'Accept': 'application/json' }});
+        const response = await fetch(`${BASE_URL}/astrology/details?${queryParams}`, { headers: { 'Accept': 'application/json' }});
         const json = await response.json();
         if (json.success) calculateMatching(json.data.rasi, json.data.nakshatra);
         else Alert.alert('Error', 'Calculation failed');

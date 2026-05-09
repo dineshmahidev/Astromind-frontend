@@ -5,6 +5,7 @@ import { CosmicBackground } from '@/components/CosmicBackground';
 import { ThemedText } from '@/components/themed-text';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { BASE_URL } from '@/constants/Config';
 
 const { width, height } = Dimensions.get('window');
 
@@ -70,7 +71,7 @@ export default function RegisterScreen() {
       const dob = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
       const tob = `${hour24.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
 
-      const response = await fetch('http://10.73.33.139:8000/api/auth/register', {
+      const response = await fetch(`${BASE_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password, dob, tob, avatar: selectedAvatar.url }),

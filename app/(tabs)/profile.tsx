@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLanguage } from '@/context/LanguageContext';
 import { Language } from '@/constants/translations';
+import { BASE_URL } from '@/constants/Config';
 
 const { width } = Dimensions.get('window');
 
@@ -36,7 +37,7 @@ export default function ProfileScreen() {
         // Use real birth details to get Astro Card Info
         if (birthDetails) {
             const details = JSON.parse(birthDetails);
-            const res = await fetch(`http://10.73.33.139:8000/api/astrology/details?day=${details.day}&month=${details.month}&year=${details.year}&hour=${details.hour}&minute=${details.minute}&second=0`);
+            const res = await fetch(`${BASE_URL}/astrology/details?day=${details.day}&month=${details.month}&year=${details.year}&hour=${details.hour}&minute=${details.minute}&second=0`);
             const json = await res.json();
             if (json.success) setAstroInfo(json.data);
         }
@@ -51,16 +52,47 @@ export default function ProfileScreen() {
   const handleAddMoney = async () => {
     if (!amountToAdd || isNaN(parseFloat(amountToAdd))) return;
     
-    const newBalance = parseFloat(userData.wallet_balance) + parseFloat(amountToAdd);
-    const updatedUser = { ...userData, wallet_balance: newBalance.toString() };
+    const amount = parseFloat(amountToAdd);
     
-    setUserData(updatedUser);
-    await AsyncStorage.setItem('user_data', JSON.stringify(updatedUser));
-    
-    setShowAddMoney(false);
-    setAmountToAdd('');
-    const successMsg = lang === 'ta' ? 'பணம் வாலட்டில் சேர்க்கப்பட்டது.' : lang === 'hi' ? 'राशि वॉलेट में जोड़ दी गई है।' : 'Amount added to wallet.';
-    Alert.alert(lang === 'ta' ? 'வெற்றி!' : lang === 'hi' ? 'சफलता!' : 'Success!', successMsg);
+    // Muted Razorpay for Mock Mode
+    /*
+    const RazorpayCheckout = require('react-native-razorpay').default;
+    // ... Razorpay logic ...
+    */
+
+    // Direct Mock Success Flow
+    setLoading(true);
+    try {
+        const newBalance = parseFloat(userData.wallet_balance || '0') + amount;
+        const updatedUser = { ...userData, wallet_balance: newBalance.toString() };
+        
+        // Sync with backend (Dummy call to PaymentController)
+        const res = await fetch(`${BASE_URL}/payment/dummy`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userData.id, amount, type: 'credit' })
+        });
+        const json = await res.json();
+
+        if (json.success) {
+            const newBalance = json.new_balance;
+            const updatedUser = { ...userData, wallet_balance: newBalance.toString() };
+            setUserData(updatedUser);
+            await AsyncStorage.setItem('user_data', JSON.stringify(updatedUser));
+            
+            setShowAddMoney(false);
+            setAmountToAdd('');
+            const successMsg = lang === 'ta' ? `₹${amount} வாலட்டில் சேர்க்கப்பட்டது (Mock).` : lang === 'hi' ? `₹${amount} वॉलेट में जोड़ दिया गया है (Mock)।` : `₹${amount} added to wallet (Mock).`;
+            Alert.alert(lang === 'ta' ? 'வெற்றி!' : lang === 'hi' ? 'சफलता!' : 'Success!', successMsg);
+        } else {
+            Alert.alert('Error', 'Failed to update wallet on server.');
+        }
+    } catch (e) {
+        console.error("Mock Topup Error:", e);
+        Alert.alert('Error', 'Failed to topup wallet.');
+    } finally {
+        setLoading(false);
+    }
   };
 
   const UI_STRINGS: any = {
@@ -117,20 +149,6 @@ export default function ProfileScreen() {
 
           {/* MENU LISTING */}
           <View style={styles.menuSection}>
-            <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/admin/add-astrologer')}>
-              <View style={[styles.menuIcon, { backgroundColor: 'rgba(253, 203, 110, 0.1)' }]}>
-                <Ionicons name="shield-checkmark" size={20} color="#fdcb6e" />
-              </View>
-              <ThemedText style={styles.menuText}>Admin Panel</ThemedText>
-              <Ionicons name="chevron-forward" size={18} color="#444" />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/birth-details')}>
-              <View style={[styles.menuIcon, { backgroundColor: 'rgba(108, 92, 231, 0.2)' }]}><Ionicons name="people" size={20} color="#6c5ce7" /></View>
-              <Text style={styles.menuText}>{s.family}</Text>
-              <Ionicons name="chevron-forward" size={18} color="#444" />
-            </TouchableOpacity>
-
             <View style={styles.menuItem}>
               <View style={[styles.menuIcon, { backgroundColor: 'rgba(0, 184, 148, 0.2)' }]}><Ionicons name="language" size={20} color="#00b894" /></View>
               <View style={{ flex: 1 }}>
@@ -187,9 +205,29 @@ export default function ProfileScreen() {
                 value={amountToAdd}
                 onChangeText={setAmountToAdd}
               />
+
+              <View style={styles.presetsGrid}>
+                {[10, 20, 50, 100, 500].map(amt => (
+                  <TouchableOpacity 
+                    key={amt} 
+                    style={[styles.presetChip, amountToAdd === amt.toString() && styles.presetChipActive]} 
+                    onPress={() => setAmountToAdd(amt.toString())}
+                  >
+                    <Text style={[styles.presetText, amountToAdd === amt.toString() && { color: '#fff' }]}>₹{amt}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
               
-              <TouchableOpacity style={styles.confirmBtn} onPress={handleAddMoney}>
-                <Text style={styles.confirmText}>{s.confirm}</Text>
+              <TouchableOpacity 
+                style={[styles.confirmBtn, loading && { opacity: 0.7 }]} 
+                onPress={handleAddMoney}
+                disabled={loading}
+              >
+                {loading ? (
+                    <ActivityIndicator color="#fff" />
+                ) : (
+                    <Text style={styles.confirmText}>{s.confirm}</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -235,5 +273,9 @@ const styles = StyleSheet.create({
   langSelector: { flexDirection: 'row', gap: 8, marginTop: 10 },
   langBtn: { backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   langBtnActive: { backgroundColor: '#00b894', borderColor: '#00b894' },
-  langText: { color: '#888', fontSize: 12, fontWeight: '600' }
+  langText: { color: '#888', fontSize: 12, fontWeight: '600' },
+  presetsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', marginBottom: 25 },
+  presetChip: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  presetChipActive: { backgroundColor: '#6c5ce7', borderColor: '#6c5ce7' },
+  presetText: { color: '#aaa', fontSize: 14, fontWeight: 'bold' }
 });

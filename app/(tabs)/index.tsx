@@ -103,12 +103,6 @@ export default function HomeScreen() {
               <ThemedText style={styles.gridText}>{t.matching}</ThemedText>
             </TouchableOpacity>
           </Animated.View>
-          <Animated.View entering={FadeInUp.delay(800)}>
-            <TouchableOpacity style={styles.gridItem} onPress={() => router.push('/panchang')}>
-              <Ionicons name="calendar" size={30} color="#00cec9" />
-              <ThemedText style={styles.gridText}>{t.panchang}</ThemedText>
-            </TouchableOpacity>
-          </Animated.View>
           <Animated.View entering={FadeInUp.delay(900)}>
             <TouchableOpacity style={styles.gridItem} onPress={() => router.push('/kundli')}>
               <Ionicons name="book" size={30} color="#fab1a0" />
@@ -139,27 +133,67 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Future Predict Banner */}
-        <Animated.View entering={FadeInUp.delay(1050)}>
-          <TouchableOpacity 
-            style={[styles.marriageBanner, { backgroundColor: 'rgba(108, 92, 231, 0.12)', borderColor: 'rgba(108, 92, 231, 0.3)' }]} 
-            onPress={() => router.push('/future-predict')}
-          >
-            <View style={styles.marriageBannerLeft}>
-              <Text style={styles.marriageBannerTitle}>🔮 {t.future_predict}</Text>
-              <Text style={styles.marriageBannerSub}>{t.get_future_answers}</Text>
-            </View>
-            <View style={[styles.marriageBannerBtn, { backgroundColor: '#6c5ce7' }]}>
-              <Text style={styles.marriageBannerBtnText}>{t.view}</Text>
-              <Ionicons name="chevron-forward" size={14} color="#fff" />
-            </View>
+        {/* Section Title */}
+        <Animated.View entering={FadeInUp.delay(1020)} style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{t.future_predict}</Text>
+          <TouchableOpacity onPress={() => router.push('/future-predict')}>
+            <Text style={styles.seeAllText}>{t.view}</Text>
           </TouchableOpacity>
+        </Animated.View>
+
+        {/* Horizontal Future Prediction Container */}
+        <Animated.View entering={FadeInUp.delay(1050)} style={styles.futureListWrapper}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            contentContainerStyle={styles.futureContainer}
+          >
+            <TouchableOpacity 
+              style={[styles.futureItem, { backgroundColor: '#6c5ce7' }]}
+              onPress={() => router.push({ pathname: '/future-predict', params: { cat: 'career' } })}
+            >
+              <Ionicons name="briefcase" size={24} color="#fff" />
+              <Text style={styles.futureItemText}>{t.career}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.futureItem, { backgroundColor: '#e84393' }]}
+              onPress={() => router.push({ pathname: '/future-predict', params: { cat: 'wealth' } })}
+            >
+              <Ionicons name="cash" size={24} color="#fff" />
+              <Text style={styles.futureItemText}>{t.wealth}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.futureItem, { backgroundColor: '#00cec9' }]}
+              onPress={() => router.push({ pathname: '/future-predict', params: { cat: 'health' } })}
+            >
+              <Ionicons name="medkit" size={24} color="#fff" />
+              <Text style={styles.futureItemText}>{t.health}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.futureItem, { backgroundColor: '#fab1a0' }]}
+              onPress={() => router.push({ pathname: '/future-predict', params: { cat: 'family' } })}
+            >
+              <Ionicons name="people" size={24} color="#fff" />
+              <Text style={styles.futureItemText}>{t.family}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.futureItem, { backgroundColor: '#fdcb6e' }]}
+              onPress={() => router.push({ pathname: '/future-predict', params: { cat: 'education' } })}
+            >
+              <Ionicons name="book" size={24} color="#fff" />
+              <Text style={styles.futureItemText}>{t.education}</Text>
+            </TouchableOpacity>
+          </ScrollView>
         </Animated.View>
 
         {/* Consult Astrologer CTA */}
         <Animated.View entering={FadeInUp.delay(1100)}>
           <TouchableOpacity style={styles.consultBanner} onPress={() => router.push('/(tabs)/astrologers')}>
-            <Ionicons name="people" size={22} color="#00cec9" />
+            <Ionicons name="chatbubbles" size={22} color="#00cec9" />
             <View style={{ flex: 1 }}>
               <Text style={styles.consultTitle}>{t.talk_astrologer}</Text>
               <Text style={styles.consultSub}>{t.get_predictions}</Text>
@@ -278,6 +312,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 15,
+    marginBottom: 20,
   },
   gridItem: {
     width: (width - 55) / 2,
@@ -293,6 +328,51 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 14,
     fontWeight: '600',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 15,
+  },
+  sectionTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  seeAllText: {
+    color: '#6c5ce7',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  futureListWrapper: {
+    marginHorizontal: -20,
+  },
+  futureContainer: {
+    paddingHorizontal: 20,
+    gap: 12,
+    paddingBottom: 20,
+  },
+  futureItem: {
+    width: 120,
+    height: 120,
+    borderRadius: 24,
+    padding: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+  },
+  futureItemText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: 'bold',
+    marginTop: 10,
+    textAlign: 'center',
   },
   marriageBanner: {
     flexDirection: 'row',

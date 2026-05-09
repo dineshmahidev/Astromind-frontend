@@ -5,19 +5,25 @@ import { CosmicBackground } from '@/components/CosmicBackground';
 import { ThemedText } from '@/components/themed-text';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '@/context/LanguageContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeIn, SlideInBottom } from 'react-native-reanimated';
 
-const BASE_URL = 'http://10.73.33.139:8000/api';
+let BASE_URL = 'http://10.22.133.139:8000/api';
 
 export default function ChatScreen() {
-  const { id, name, mode } = useLocalSearchParams();
+  const { expertId, name, mode, initialMessage, charge, expertUserId } = useLocalSearchParams();
+  const id = expertId; // Map expertId to local id variable for consistency with existing logic
   const router = useRouter();
   const { t } = useLanguage();
   const [question, setQuestion] = useState(
+    initialMessage ? String(initialMessage) :
     mode === 'video' ? 'I want to have a video consultation for detailed chart analysis.' : 
     mode === 'audio' ? 'I want to have an audio consultation.' : ''
   );
   const [loading, setLoading] = useState(false);
+
+  const isFollowUp = charge === '10';
+  const amount = isFollowUp ? 10 : (mode === 'video' ? 100 : (mode === 'audio' ? 50 : 10));
 
   const handlePayAndSend = async () => {
     if (!question.trim()) {
@@ -25,11 +31,20 @@ export default function ChatScreen() {
       return;
     }
 
-    const amount = mode === 'video' ? 100 : (mode === 'audio' ? 50 : 25);
-
     setLoading(true);
     try {
-      // 1. Simulate Dummy Payment (User ID 1 for testing)
+      const savedUrl = await AsyncStorage.getItem('custom_server_url');
+      if (savedUrl) BASE_URL = savedUrl;
+
+      const savedUser = await AsyncStorage.getItem('user_data');
+      if (!savedUser) throw new Error('User not found');
+      const user = JSON.parse(savedUser);
+      const userId = user.id;
+
+      // Add artificial delay so indication is visible
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // 1. Simulate Dummy Payment
       const payResponse = await fetch(`${BASE_URL}/payment/dummy`, {
         method: 'POST',
         headers: { 
@@ -37,11 +52,12 @@ export default function ChatScreen() {
           'Accept': 'application/json' 
         },
         body: JSON.stringify({
-          user_id: 1, 
-          amount: amount
+          user_id: userId, 
+          amount: amount,
+          type: 'debit'
         })
       });
-
+// ... 
       const payText = await payResponse.text();
       let payJson;
       try {
@@ -60,8 +76,8 @@ export default function ChatScreen() {
             'Accept': 'application/json'
           },
           body: JSON.stringify({
-            user_id: 1,
-            astrologer_id: id,
+            user_id: userId,
+            astrologer_id: parseInt(String(id)),
             question: question,
             amount: amount,
             is_video_call: mode === 'video',
@@ -74,8 +90,8 @@ export default function ChatScreen() {
         try {
           sendJson = JSON.parse(sendText);
         } catch (e) {
-          console.error('Failed to parse consultation response:', sendText);
-          throw new Error('Invalid server response during consultation submission');
+          Alert.alert('Server Error', 'Failed to submit consultation. Server returned invalid response.');
+          return;
         }
 
         if (sendJson.success) {
@@ -87,27 +103,32 @@ export default function ChatScreen() {
             [{ 
               text: 'OK', 
               onPress: () => {
-                if (mode === 'video' || mode === 'audio' || mode === 'chat') {
-                  router.push({
-                    pathname: '/astrologer/chat',
-                    params: { 
-                      id: id, 
-                      name: name,
-                      mode: mode,
-                      startCall: (mode === 'video' || mode === 'audio') ? 'true' : 'false'
+                router.replace({
+                    pathname: '/chat/room1' as any,
+                    params: {
+                        id: String(id),
+                        expertUserId: String(expertUserId || ''),
+                        clientId: String(user.id),
+                        name: String(name),
+                        mode: String(mode),
+                        startCall: (mode === 'video' || mode === 'audio') ? 'true' : 'false',
+                        consultationId: String(sendJson.consultation?.id || '')
                     }
-                  });
-                } else {
-                  router.back();
-                }
+                });
               } 
             }]
           );
+        } else {
+          console.log('Consultation Error Response:', sendJson);
+          Alert.alert('Consultation Error', sendJson.message || 'Failed to start consultation. Please try again.');
         }
+      } else {
+        console.log('Payment Error Response:', payJson);
+        Alert.alert('Payment Failed', payJson.message || 'Unable to process payment. Please check your wallet balance.');
       }
-    } catch (error) {
-      console.error(error);
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+    } catch (error: any) {
+      console.error('System/SQL Error Details:', error);
+      Alert.alert('System Error', error.message || 'Something went wrong. Please check your internet connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -137,7 +158,9 @@ export default function ChatScreen() {
           <Animated.View entering={FadeIn.delay(200)} style={styles.infoCard}>
             <Ionicons name={mode === 'video' ? 'videocam' : (mode === 'audio' ? 'call' : 'information-circle')} size={24} color="#6c5ce7" />
             <ThemedText style={styles.infoText}>
-              {mode === 'video' 
+              {isFollowUp
+                ? 'A follow-up fee of ₹10 will be deducted from your wallet for this expert analysis.'
+                : mode === 'video' 
                 ? 'A fee of ₹100 will be deducted from your wallet for this live video session.'
                 : mode === 'audio'
                 ? 'A fee of ₹50 will be deducted from your wallet for this live audio session.'
@@ -152,7 +175,7 @@ export default function ChatScreen() {
               placeholder={mode === 'video' || mode === 'audio' ? 'e.g. Career growth, Marriage timing...' : 'e.g. When will I get a job?...'}
               placeholderTextColor="rgba(255,255,255,0.3)"
               multiline
-              numberOfLines={6}
+              numberOfLines={3}
               value={question}
               onChangeText={setQuestion}
               textAlignVertical="top"
@@ -164,7 +187,7 @@ export default function ChatScreen() {
           <View style={styles.priceRow}>
             <ThemedText style={styles.priceLabel}>Consultation Fee</ThemedText>
             <ThemedText style={styles.priceValue}>
-              ₹{mode === 'video' ? '100.00' : (mode === 'audio' ? '50.00' : '25.00')}
+              ₹{amount.toFixed(2)}
             </ThemedText>
           </View>
 

@@ -6,7 +6,7 @@ import { useRouter, usePathname } from 'expo-router';
 const TABS = [
   { name: 'index',       label: 'Home',       icon: 'home',              iconOut: 'home-outline', route: '/(tabs)' },
   { name: 'astrologers', label: 'Experts',    icon: 'people',            iconOut: 'people-outline', route: '/(tabs)/astrologers' },
-  { name: 'ai',          label: 'AI Chat',    icon: 'chatbubble-ellipses', iconOut: 'chatbubble-ellipses-outline', route: '/ai', isStack: true },
+  { name: 'future-predict', label: 'Predictions', icon: 'sparkles',      iconOut: 'sparkles-outline', route: '/future-predict', isStack: true },
   { name: 'profile',     label: 'Profile',    icon: 'person',            iconOut: 'person-outline', route: '/(tabs)/profile' },
 ];
 

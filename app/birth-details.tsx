@@ -6,6 +6,7 @@ import { CosmicBackground } from '@/components/CosmicBackground';
 import { ThemedText } from '@/components/themed-text';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { BASE_URL } from '@/constants/Config';
 
 export default function BirthDetailsScreen() {
   const router = useRouter();
@@ -58,7 +59,7 @@ export default function BirthDetailsScreen() {
       };
 
       const queryParams = new URLSearchParams(formData).toString();
-      const apiUrl = `http://10.73.33.139:8000/api/astrology/details?${queryParams}`;
+      const apiUrl = `${BASE_URL}/astrology/details?${queryParams}`;
       
       const response = await fetch(apiUrl, {
         headers: { 'Accept': 'application/json' }

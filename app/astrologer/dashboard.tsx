@@ -10,8 +10,12 @@ const { width } = Dimensions.get('window');
 export default function AstrologerDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [isOnDuty, setIsOnDuty] = useState(true);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' or 'clients'
+
+  const BASE_URL = 'http://10.22.133.139:8000/api';
 
   useEffect(() => {
     loadProfile();
@@ -19,7 +23,25 @@ export default function AstrologerDashboard() {
 
   const loadProfile = async () => {
     const userData = await AsyncStorage.getItem('user_data');
-    if (userData) setUser(JSON.parse(userData));
+    if (userData) {
+      const parsedUser = JSON.parse(userData);
+      setUser(parsedUser);
+      fetchDashboard(parsedUser.id);
+    }
+  };
+
+  const fetchDashboard = async (userId: string) => {
+    try {
+        const response = await fetch(`${BASE_URL}/astrologer/dashboard?user_id=${userId}`);
+        const json = await response.json();
+        if (json.success) {
+            setDashboardData(json);
+        }
+    } catch (e) {
+        console.error('Fetch Dashboard Error:', e);
+    } finally {
+        setLoading(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -27,7 +49,11 @@ export default function AstrologerDashboard() {
     router.replace('/auth/login');
   };
 
-  if (!user) return <ActivityIndicator style={{ flex: 1 }} />;
+  if (!user || loading) return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#050510' }}>
+      <ActivityIndicator size="large" color="#6c5ce7" />
+    </View>
+  );
 
   return (
     <CosmicBackground>
@@ -75,13 +101,13 @@ export default function AstrologerDashboard() {
               <View style={styles.statsGrid}>
                 <View style={styles.statBox}>
                   <View style={styles.statIconWrap}><Ionicons name="wallet-outline" size={22} color="#00cec9" /></View>
-                  <Text style={styles.statVal}>₹4,250</Text>
-                  <Text style={styles.statLabel}>Earnings</Text>
+                  <Text style={styles.statVal}>₹{dashboardData?.stats?.earnings_today || 0}</Text>
+                  <Text style={styles.statLabel}>Today's Earnings</Text>
                 </View>
                 <View style={styles.statBox}>
                   <View style={styles.statIconWrap}><Ionicons name="people-outline" size={22} color="#6c5ce7" /></View>
-                  <Text style={styles.statVal}>12</Text>
-                  <Text style={styles.statLabel}>Total Clients</Text>
+                  <Text style={styles.statVal}>{dashboardData?.stats?.total_consults || 0}</Text>
+                  <Text style={styles.statLabel}>Total Consults</Text>
                 </View>
               </View>
 
@@ -91,39 +117,94 @@ export default function AstrologerDashboard() {
                   <Text style={styles.sectionTitle}>Recent Activity</Text>
                   <TouchableOpacity onPress={() => setActiveTab('clients')}><Text style={styles.seeAll}>See All</Text></TouchableOpacity>
                 </View>
-                {[1, 2, 3].map((item) => (
-                  <View key={item} style={styles.consultCard}>
-                    <View style={styles.clientInfo}>
-                      <View style={[styles.avatarPlaceholder, { backgroundColor: item % 2 === 0 ? '#6c5ce7' : '#00cec9' }]}><Text style={styles.avatarText}>C</Text></View>
-                      <View>
-                        <Text style={styles.clientName}>Client #{1000 + item}</Text>
-                        <Text style={styles.consultTime}>Today • 15 mins video call</Text>
+                {(dashboardData?.consultations || []).map((consult: any) => {
+                  const userAvatar = consult.user?.avatar;
+                  const avatarUrl = userAvatar ? (userAvatar.startsWith('http') ? userAvatar : `http://10.22.133.139:8000/storage/${userAvatar}`) : null;
+
+                  return (
+                    <TouchableOpacity 
+                      key={consult.id} 
+                      style={styles.consultCard}
+                    onPress={() => router.push({
+                        pathname: '/chat/room1',
+                        params: {
+                          id: user.id,
+                          clientId: consult.user_id,
+                          name: consult.user?.name || 'Client',
+                          avatar: avatarUrl,
+                          consultationId: consult.id
+                        }
+                      })}
+                    >
+                      <View style={styles.clientInfo}>
+                        {avatarUrl ? (
+                          <Image source={{ uri: avatarUrl }} style={styles.avatarPlaceholder} />
+                        ) : (
+                          <View style={[styles.avatarPlaceholder, { backgroundColor: consult.id % 2 === 0 ? '#6c5ce7' : '#00cec9' }]}>
+                            <Text style={styles.avatarText}>{consult.user?.name?.charAt(0) || 'C'}</Text>
+                          </View>
+                        )}
+                        <View>
+                          <Text style={styles.clientName}>{consult.user?.name || 'Anonymous'}</Text>
+                          <Text style={styles.consultTime}>
+                            {new Date(consult.created_at).toLocaleDateString()} • {consult.call_type}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                    <Text style={styles.consultFee}>+₹150</Text>
+                      <Text style={styles.consultFee}>+₹{consult.amount_paid}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                {(!dashboardData?.consultations || dashboardData.consultations.length === 0) && (
+                  <View style={{ padding: 40, alignItems: 'center' }}>
+                    <Text style={{ color: '#666', fontSize: 14 }}>No recent activity yet.</Text>
                   </View>
-                ))}
+                )}
               </View>
             </>
           ) : (
             /* CLIENTS LIST VIEW */
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>All Consulting Clients</Text>
-              {[1, 2, 3, 4, 5, 6].map((item) => (
-                <TouchableOpacity key={item} style={styles.clientFullCard}>
-                  <View style={styles.clientMain}>
-                    <View style={styles.avatarPlaceholder}><Text style={styles.avatarText}>C</Text></View>
-                    <View>
-                      <Text style={styles.clientName}>Customer User {item}</Text>
-                      <Text style={styles.clientSub}>Last consulted: 2 days ago</Text>
+              {(dashboardData?.consultations || []).map((consult: any) => {
+                const userAvatar = consult.user?.avatar;
+                const avatarUrl = userAvatar ? (userAvatar.startsWith('http') ? userAvatar : `http://10.22.133.139:8000/storage/${userAvatar}`) : null;
+
+                return (
+                  <TouchableOpacity 
+                    key={consult.id} 
+                    style={styles.clientFullCard}
+                      onPress={() => router.push({
+                        pathname: '/chat/room1',
+                        params: {
+                          id: user.id,
+                          clientId: consult.user_id,
+                          name: consult.user?.name || 'Client',
+                          avatar: avatarUrl,
+                          consultationId: consult.id
+                        }
+                      })}
+                  >
+                    <View style={styles.clientMain}>
+                      {avatarUrl ? (
+                        <Image source={{ uri: avatarUrl }} style={styles.avatarPlaceholder} />
+                      ) : (
+                        <View style={styles.avatarPlaceholder}>
+                          <Text style={styles.avatarText}>{consult.user?.name?.charAt(0) || 'C'}</Text>
+                        </View>
+                      )}
+                      <View>
+                        <Text style={styles.clientName}>{consult.user?.name || 'Anonymous'}</Text>
+                        <Text style={styles.clientSub}>Consulted: {new Date(consult.created_at).toLocaleDateString()}</Text>
+                      </View>
                     </View>
-                  </View>
-                  <View style={styles.clientStats}>
-                    <Text style={styles.sessionCount}>3 Sessions</Text>
-                    <Ionicons name="chevron-forward" size={16} color="#444" />
-                  </View>
-                </TouchableOpacity>
-              ))}
+                    <View style={styles.clientStats}>
+                      <Text style={styles.sessionCount}>₹{consult.amount_paid}</Text>
+                      <Ionicons name="chevron-forward" size={16} color="#444" />
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
 

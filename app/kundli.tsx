@@ -5,6 +5,7 @@ import { CosmicBackground } from '@/components/CosmicBackground';
 import { ThemedText } from '@/components/themed-text';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BASE_URL, API_IP } from '@/constants/Config';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -20,9 +21,24 @@ const LANGUAGES = [
 ];
 
 const UI_STRINGS: Record<string, any> = {
-  en: { title: 'Your Kundli', chart: 'Birth Chart', dasha: 'Life Timeline', spashta: 'Graha Spashta', sub: 'Sub-periods', current: 'CURRENT', selectLang: 'Select Language', viewDetail: 'View Full Analysis →' },
-  ta: { title: 'ஜாதகம்', chart: 'பிறப்பு ஜாதகம்', dasha: 'வாழ்க்கை பயணம்', spashta: 'கிரக நிலை', sub: 'புத்திகள்', current: 'இப்போது', selectLang: 'மொழியைத் தேர்ந்தெடுக்கவும்', viewDetail: 'முழு விளக்கத்தை வாசிக்க →' },
-  hi: { title: 'आपकी कुंडली', chart: 'जन्म कुंडली', dasha: 'जीवन यात्रा', spashta: 'ग्रह स्थिति', sub: 'भुक्ति', current: 'वर्तमान', selectLang: 'भाषा चुनें', viewDetail: 'पूरा विवरण देखें →' },
+  en: { 
+    title: 'Your Kundli', chart: 'Birth Chart', dasha: 'Life Timeline', spashta: 'Graha Spashta', 
+    sub: 'Sub-periods', current: 'CURRENT', selectLang: 'Select Language', viewDetail: 'View Full Analysis →',
+    summary: 'Panchangam', tithi: 'Tithi', yoga: 'Yoga', karana: 'Karana', lagna: 'Lagnam', 
+    yogi: 'Yogi', avayogi: 'Avayogi', star: 'Nakshatra', rasi: 'Rasi'
+  },
+  ta: { 
+    title: 'ஜாதகம்', chart: 'பிறப்பு ஜாதகம்', dasha: 'வாழ்க்கை பயணம்', spashta: 'கிரக நிலை', 
+    sub: 'புத்திகள்', current: 'இப்போது', selectLang: 'மொழியைத் தேர்ந்தெடுக்கவும்', viewDetail: 'முழு விளக்கத்தை வாசிக்க →',
+    summary: 'பஞ்சாங்கம்', tithi: 'திதி', yoga: 'யோகம்', karana: 'கரணம்', lagna: 'லக்னம்', 
+    yogi: 'யோகி', avayogi: 'அவயோகி', star: 'நட்சத்திரம்', rasi: 'ராசி'
+  },
+  hi: { 
+    title: 'आपकी कुंडली', chart: 'जन्म कुंडली', dasha: 'जीवन यात्रा', spashta: 'ग्रह स्थिति', 
+    sub: 'भुक्ति', current: 'वर्तमान', selectLang: 'भाषा चुनें', viewDetail: 'पूरा विवरण देखें →',
+    summary: 'पंचांग', tithi: 'तिथि', yoga: 'योग', karana: 'करण', lagna: 'लग्न', 
+    yogi: 'योगी', avayogi: 'अव्योगी', star: 'नक्षत्र', rasi: 'राशि'
+  },
 };
 
 export default function KundliScreen() {
@@ -34,6 +50,7 @@ export default function KundliScreen() {
   const [chartData, setChartData] = useState<any>(null);
   const [planetDetails, setPlanetDetails] = useState<any[]>([]);
   const [dashaData, setDashaData] = useState<any[]>([]);
+  const [summaryData, setSummaryData] = useState<any>(null);
   const [expandedDasha, setExpandedDasha] = useState<number | null>(null);
 
   useEffect(() => {
@@ -61,6 +78,7 @@ export default function KundliScreen() {
       const birthDetails = await AsyncStorage.getItem('birth_details');
       if (!birthDetails) {
         setLoading(false);
+        setChartData('missing'); // Special state for missing details
         return;
       }
       const details = JSON.parse(birthDetails);
@@ -69,15 +87,29 @@ export default function KundliScreen() {
         hour: details.hour, minute: details.minute, lang: targetLang
       }).toString();
 
-      const response = await fetch(`http://10.73.33.139:8000/api/astrology/chart?${queryParams}`);
+      const response = await fetch(`${BASE_URL}/astrology/chart?${queryParams}`, {
+        headers: { 'Accept': 'application/json' }
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server Error Response:', errorText);
+        throw new Error(`Server returned ${response.status}`);
+      }
+
       const json = await response.json();
       if (json.success && json.data) {
         setChartData(json.data.chart || null);
         setPlanetDetails(json.data.details || []);
         setDashaData(json.data.dasha || []);
+        setSummaryData(json.data.summary || null);
+      } else {
+        setChartData(null);
+        setSummaryData(null);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Kundli Fetch Error:', e);
+      setChartData(null);
     } finally {
       setLoading(false);
     }
@@ -151,13 +183,30 @@ export default function KundliScreen() {
         </View>
 
         {loading ? (
-          <ActivityIndicator size="large" color="#6c5ce7" style={{ marginTop: 100 }} />
+          <View style={{ marginTop: 100, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color="#FFD700" />
+            <Text style={styles.loaderText}>Consulting the Stars...</Text>
+          </View>
+        ) : chartData === 'missing' ? (
+          <View style={styles.errorBox}>
+            <Ionicons name="person-add-outline" size={60} color="#6c5ce7" style={{ marginBottom: 20 }} />
+            <ThemedText style={{ textAlign: 'center', marginBottom: 10, fontWeight: 'bold' }}>Details Missing</ThemedText>
+            <ThemedText style={{ textAlign: 'center', marginBottom: 25, color: '#888' }}>
+              We need your birth date and time to generate your personalized Kundli.
+            </ThemedText>
+            <TouchableOpacity 
+              style={styles.retryButton}
+              onPress={() => router.push('/birth-details')}
+            >
+              <Text style={styles.retryText}>Set Birth Details</Text>
+            </TouchableOpacity>
+          </View>
         ) : !chartData ? (
           <View style={styles.errorBox}>
             <Ionicons name="cloud-offline-outline" size={60} color="#ff7675" style={{ marginBottom: 20 }} />
             <ThemedText style={{ textAlign: 'center', marginBottom: 10, fontWeight: 'bold' }}>Connection Issue</ThemedText>
             <ThemedText style={{ textAlign: 'center', marginBottom: 25, color: '#888' }}>
-              The app is ready, but it can't reach your computer's server at 10.73.33.139:8000.
+              The app can't reach the server at {API_IP}:8000. Ensure your local server is running and your phone is on the same network.
             </ThemedText>
             
             <TouchableOpacity 
@@ -171,14 +220,62 @@ export default function KundliScreen() {
               style={[styles.retryButton, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#6c5ce7' }]}
               onPress={() => router.push('/birth-details')}
             >
-              <Text style={[styles.retryText, { color: '#6c5ce7' }]}>Edit Birth Details</Text>
+              <Text style={[styles.retryText, { color: '#6c5ce7' }]}>Update Birth Details</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <ScrollView style={styles.mainScroll} showsVerticalScrollIndicator={false}>
+            {summaryData && (
+              <View style={styles.panchangSection}>
+                <View style={styles.panchangHeader}>
+                  <View>
+                    <ThemedText style={styles.panchangTitle}>{s.summary}</ThemedText>
+                    <ThemedText style={styles.panchangSub}>Celestial Alignment at Birth</ThemedText>
+                  </View>
+                  <Ionicons name="calendar-outline" size={32} color="#FFD700" opacity={0.5} />
+                </View>
+                
+                <View style={styles.panchangList}>
+                  <PanchangRow label={s.rasi} value={lang === 'ta' ? summaryData.rasi_ta : summaryData.rasi} icon="moon-outline" color="#a29bfe" />
+                  <PanchangRow label={s.star} value={summaryData.nakshatra} icon="star-outline" color="#f1c40f" />
+                  <PanchangRow label={s.lagna} value={lang === 'ta' ? summaryData.lagna_ta : summaryData.lagna} icon="sunny-outline" color="#e67e22" />
+                  <PanchangRow label={s.tithi} value={summaryData.tithi_name} icon="partly-sunny-outline" color="#00cec9" />
+                  <PanchangRow label={s.yoga} value={summaryData.yoga} icon="infinite-outline" color="#ff7675" />
+                  <PanchangRow label={s.karana} value={summaryData.karana} icon="flash-outline" color="#fab1a0" />
+                </View>
+
+                <View style={styles.yogiSection}>
+                   <View style={styles.yogiBox}>
+                      <ThemedText style={styles.yogiLabel}>{s.yogi}</ThemedText>
+                      <ThemedText style={[styles.yogiValue, { color: '#4cd137' }]}>{summaryData.yogi}</ThemedText>
+                   </View>
+                   <View style={[styles.yogiBox, { borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.1)' }]}>
+                      <ThemedText style={styles.yogiLabel}>{s.avayogi}</ThemedText>
+                      <ThemedText style={[styles.yogiValue, { color: '#e84118' }]}>{summaryData.avayogi}</ThemedText>
+                   </View>
+                </View>
+              </View>
+            )}
+
             {activeTab === 'chart' ? (
               <>
                 <View style={styles.chartContainer}>
+                  {dashaData.find(d => new Date() > new Date(d.start) && new Date() < new Date(d.end)) && (
+                    <TouchableOpacity 
+                      style={styles.currentDashaBanner}
+                      onPress={() => setActiveTab('dasha')}
+                    >
+                      <View style={styles.dashaBadge}>
+                        <Ionicons name="time-outline" size={16} color="#fff" />
+                        <Text style={styles.dashaBadgeText}>Active Dasha</Text>
+                      </View>
+                      <Text style={styles.dashaPreviewText}>
+                        {dashaData.find(d => new Date() > new Date(d.start) && new Date() < new Date(d.end))?.planet} Dasha
+                      </Text>
+                      <Ionicons name="arrow-forward" size={18} color="rgba(255,255,255,0.5)" />
+                    </TouchableOpacity>
+                  )}
+                  
                   <View style={styles.row}>
                     <RasiCell idx={11} name="Meenam" /><RasiCell idx={0} name="Mesham" /><RasiCell idx={1} name="Rishab" /><RasiCell idx={2} name="Mithun" />
                   </View>
@@ -270,6 +367,20 @@ export default function KundliScreen() {
   );
 }
 
+function PanchangRow({ label, value, icon, color }: any) {
+  return (
+    <View style={styles.panchangRow}>
+      <View style={[styles.panchangIcon, { backgroundColor: `${color}15` }]}>
+        <Ionicons name={icon} size={20} color={color} />
+      </View>
+      <View style={styles.panchangMain}>
+        <Text style={styles.panchangLabel}>{label}</Text>
+        <Text style={styles.panchangValue}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, paddingTop: 60 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
@@ -277,19 +388,136 @@ const styles = StyleSheet.create({
   title: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
   dropdown: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 15, gap: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   dropdownText: { color: '#fff', fontSize: 13, fontWeight: '500' },
-  tabRow: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 20, padding: 5, marginBottom: 25 },
+  loaderText: { color: '#FFD700', marginTop: 15, fontSize: 16, fontWeight: '500' },
+  
+  panchangSection: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 25,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  panchangHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  panchangTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#FFD700',
+  },
+  panchangSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.4)',
+    marginTop: 2,
+  },
+  panchangList: {
+    gap: 12,
+  },
+  panchangRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    padding: 12,
+    borderRadius: 18,
+    gap: 15,
+  },
+  panchangIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  panchangMain: {
+    flex: 1,
+  },
+  panchangLabel: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.5)',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  panchangValue: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  yogiSection: {
+    flexDirection: 'row',
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  yogiBox: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  yogiLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.4)',
+    textTransform: 'uppercase',
+    marginBottom: 5,
+  },
+  yogiValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+
+  tabRow: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 20,
+    padding: 5,
+    marginBottom: 20,
+  },
   tab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 15 },
   activeTab: { backgroundColor: 'rgba(108, 92, 231, 0.3)' },
   tabText: { color: '#888', fontWeight: 'bold' },
   activeTabText: { color: '#fff' },
   mainScroll: { flex: 1 },
-  chartContainer: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 25, padding: 5, borderWidth: 2, borderColor: '#6c5ce7', marginBottom: 30 },
+  chartContainer: { backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 25, padding: 5, borderWidth: 2, borderColor: '#6c5ce7', marginBottom: 30, overflow: 'hidden' },
+  currentDashaBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(108, 92, 231, 0.2)',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(108, 92, 231, 0.3)',
+    gap: 12,
+  },
+  dashaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6c5ce7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 5,
+  },
+  dashaBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
+  dashaPreviewText: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
   row: { flexDirection: 'row' },
-  cell: { width: GRID_SIZE - 2, height: GRID_SIZE - 2, borderSize: 1, borderColor: 'rgba(255,255,255,0.1)', borderWidth: 0.5, padding: 5, justifyContent: 'space-between' },
-  centerCell: { backgroundColor: 'rgba(108, 92, 231, 0.05)', borderWidth: 0 },
-  rasiName: { color: '#6c5ce7', fontSize: 8, fontWeight: 'bold', textTransform: 'uppercase' },
-  planetsList: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
-  planetText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
+  cell: { width: GRID_SIZE, height: GRID_SIZE, borderSize: 1, borderColor: 'rgba(108, 92, 231, 0.3)', borderWidth: 0.5, padding: 5, justifyContent: 'space-between' },
+  centerCell: { backgroundColor: 'rgba(108, 92, 231, 0.02)', borderWidth: 0.5, borderColor: 'rgba(108, 92, 231, 0.2)' },
+  rasiName: { color: 'rgba(108, 92, 231, 0.6)', fontSize: 7, fontWeight: 'bold', textTransform: 'uppercase' },
+  planetsList: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, justifyContent: 'center' },
+  planetText: { color: '#fff', fontSize: 13, fontWeight: 'bold', textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 2 },
   detailsSection: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 25, padding: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   sectionTitle: { color: '#6c5ce7', fontWeight: 'bold', marginBottom: 20, fontSize: 18 },
   tableRow: { flexDirection: 'row', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)', alignItems: 'center' },

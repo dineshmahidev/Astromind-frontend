@@ -5,6 +5,7 @@ import { CosmicBackground } from '@/components/CosmicBackground';
 import { ThemedText } from '@/components/themed-text';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { SERVER_URL } from '@/constants/Config';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -12,10 +13,14 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [tapCount, setTapCount] = useState(0);
-  const [serverUrl, setServerUrl] = useState('http://10.73.33.139:8000');
+  const [serverUrl, setServerUrl] = useState(SERVER_URL);
   const [showConfig, setShowConfig] = useState(false);
+  const [secureText, setSecureText] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   React.useEffect(() => {
+    // Check for custom override, but default to our new SERVER_URL
     AsyncStorage.getItem('custom_server_url').then(val => {
       if (val) setServerUrl(val);
     });
@@ -31,7 +36,10 @@ export default function LoginScreen() {
   };
 
   const handleLogin = async () => {
-    if (!email || !password) return Alert.alert('Error', 'Please fill all fields');
+    setErrorMsg('');
+    setSuccessMsg('');
+    if (!email || !password) return setErrorMsg('Please fill all fields');
+    
     setLoading(true);
     try {
       const response = await fetch(`${serverUrl}/api/auth/login`, {
@@ -41,10 +49,10 @@ export default function LoginScreen() {
       });
       const json = await response.json();
       if (json.success) {
+        setSuccessMsg('Login successful! Connecting...');
         await AsyncStorage.setItem('user_token', 'true');
         await AsyncStorage.setItem('user_data', JSON.stringify(json.user));
         
-        // Only set birth details if it's a regular user (astrologers may not have these fields)
         if (json.user.role === 'user' && json.user.dob) {
             await AsyncStorage.setItem('birth_details', JSON.stringify({
                 name: json.user.name,
@@ -56,21 +64,19 @@ export default function LoginScreen() {
             }));
         }
 
-        // Complete Refresh Logic: Redirect based on Role (Case Insensitive)
-        const userRole = String(json.user.role).toLowerCase();
-        
-        if (userRole === 'astrologer') {
-            console.log('Navigating to Astrologer Workspace');
-            router.replace('/(astro-tabs)');
-        } else {
-            console.log('Navigating to User Tabs');
-            router.replace('/(tabs)');
-        }
+        setTimeout(() => {
+            const userRole = String(json.user.role).toLowerCase();
+            if (userRole === 'astrologer') {
+                router.replace('/(astro-tabs)');
+            } else {
+                router.replace('/(tabs)');
+            }
+        }, 1000);
       } else {
-        Alert.alert('Login Failed', json.message);
+        setErrorMsg(json.message || 'Invalid credentials');
       }
     } catch (e) {
-      Alert.alert('Error', 'Could not connect to server');
+      setErrorMsg('Could not connect to server. Check your URL/Wi-Fi.');
     } finally {
       setLoading(false);
     }
@@ -99,6 +105,12 @@ export default function LoginScreen() {
                   AsyncStorage.setItem('custom_server_url', val);
                 }}
               />
+              <TouchableOpacity style={{ marginRight: 10 }} onPress={() => {
+                setServerUrl(SERVER_URL);
+                AsyncStorage.removeItem('custom_server_url');
+              }}>
+                <Ionicons name="refresh-circle" size={24} color="#e84393" />
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowConfig(false)}>
                 <Ionicons name="checkmark-circle" size={24} color="#00cec9" />
               </TouchableOpacity>
@@ -123,11 +135,17 @@ export default function LoginScreen() {
               style={styles.input} 
               placeholder="Password" 
               placeholderTextColor="#ffffff" 
-              secureTextEntry
+              secureTextEntry={secureText}
               value={password}
               onChangeText={setPassword}
             />
+            <TouchableOpacity onPress={() => setSecureText(!secureText)}>
+              <Ionicons name={secureText ? "eye-off-outline" : "eye-outline"} size={20} color="#666" />
+            </TouchableOpacity>
           </View>
+
+          {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
+          {successMsg ? <Text style={styles.successText}>{successMsg}</Text> : null}
 
           <TouchableOpacity style={styles.loginBtn} onPress={handleLogin}>
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginText}>Login</Text>}
@@ -153,5 +171,7 @@ const styles = StyleSheet.create({
   loginBtn: { backgroundColor: '#6c5ce7', height: 60, borderRadius: 20, justifyContent: 'center', alignItems: 'center', shadowColor: '#6c5ce7', shadowOpacity: 0.4, shadowRadius: 10, elevation: 5 },
   loginText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   switchText: { color: '#888', textAlign: 'center', marginTop: 10 },
-  linkText: { color: '#6c5ce7', fontWeight: 'bold' }
+  linkText: { color: '#6c5ce7', fontWeight: 'bold' },
+  errorText: { color: '#ff7675', fontSize: 14, textAlign: 'center', fontWeight: '500' },
+  successText: { color: '#00cec9', fontSize: 14, textAlign: 'center', fontWeight: '500' }
 });

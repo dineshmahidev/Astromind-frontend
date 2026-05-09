@@ -5,6 +5,7 @@ import { CosmicBackground } from '@/components/CosmicBackground';
 import { ThemedText } from '@/components/themed-text';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BASE_URL } from '@/constants/Config';
 
 const { width } = Dimensions.get('window');
 
@@ -50,12 +51,12 @@ export default function HoroscopeScreen() {
         return;
       }
       const details = JSON.parse(birthDetails);
-      const res = await fetch(`http://10.73.33.139:8000/api/astrology/details?day=${details.day}&month=${details.month}&year=${details.year}&hour=${details.hour}&minute=${details.minute}&second=0`);
+      const res = await fetch(`${BASE_URL}/astrology/details?day=${details.day}&month=${details.month}&year=${details.year}&hour=${details.hour}&minute=${details.minute}&second=0`);
       const detailsJson = await res.json();
       
       if (detailsJson.success) {
         const rasiIdx = detailsJson.data.rasi_idx;
-        const hRes = await fetch(`http://10.73.33.139:8000/api/astrology/horoscope?sign_idx=${rasiIdx}&period=${targetPeriod}&lang=${targetLang}`);
+        const hRes = await fetch(`${BASE_URL}/astrology/horoscope?sign_idx=${rasiIdx}&period=${targetPeriod}&lang=${targetLang}`);
         const hJson = await hRes.json();
         if (hJson.success) setHoroscope(hJson.data);
       }
@@ -115,13 +116,15 @@ export default function HoroscopeScreen() {
         ) : horoscope ? (
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
             {/* LUCK METER */}
-            <View style={styles.premiumCard}>
-              <Text style={styles.cardHeader}>📊 {s.luck}</Text>
-              <ProgressBar label={s.career} value={horoscope.luck_metrics.career} color="#6c5ce7" />
-              <ProgressBar label={s.wealth} value={horoscope.luck_metrics.wealth} color="#00cec9" />
-              <ProgressBar label={s.love} value={horoscope.luck_metrics.love} color="#e84393" />
-              <ProgressBar label={s.health} value={horoscope.luck_metrics.health} color="#fdcb6e" />
-            </View>
+            {horoscope.luck_metrics && (
+              <View style={styles.premiumCard}>
+                <Text style={styles.cardHeader}>📊 {s.luck}</Text>
+                <ProgressBar label={s.career} value={horoscope.luck_metrics.career} color="#6c5ce7" />
+                <ProgressBar label={s.wealth} value={horoscope.luck_metrics.wealth} color="#00cec9" />
+                <ProgressBar label={s.love} value={horoscope.luck_metrics.love} color="#e84393" />
+                <ProgressBar label={s.health} value={horoscope.luck_metrics.health} color="#fdcb6e" />
+              </View>
+            )}
 
             {/* PREDICTION */}
             <View style={styles.premiumCard}>
@@ -132,14 +135,16 @@ export default function HoroscopeScreen() {
             </View>
 
             {/* TIMINGS */}
-            <View style={styles.premiumCard}>
-              <Text style={styles.cardHeader}>⏰ {s.timings}</Text>
-              <View style={styles.timingRow}>
-                <View style={styles.timingBox}><Text style={styles.timingLabel}>{s.rahu}</Text><Text style={styles.timingValue}>{horoscope.timings.rahu}</Text></View>
-                <View style={styles.timingBox}><Text style={styles.timingLabel}>{s.yama}</Text><Text style={styles.timingValue}>{horoscope.timings.yama}</Text></View>
+            {horoscope.timings && (
+              <View style={styles.premiumCard}>
+                <Text style={styles.cardHeader}>⏰ {s.timings}</Text>
+                <View style={styles.timingRow}>
+                  <View style={styles.timingBox}><Text style={styles.timingLabel}>{s.rahu}</Text><Text style={styles.timingValue}>{horoscope.timings.rahu}</Text></View>
+                  <View style={styles.timingBox}><Text style={styles.timingLabel}>{s.yama}</Text><Text style={styles.timingValue}>{horoscope.timings.yama}</Text></View>
+                </View>
+                <View style={styles.timingBoxFull}><Text style={styles.timingLabel}>{s.gulika}</Text><Text style={styles.timingValue}>{horoscope.timings.gulika}</Text></View>
               </View>
-              <View style={styles.timingBoxFull}><Text style={styles.timingLabel}>{s.gulika}</Text><Text style={styles.timingValue}>{horoscope.timings.gulika}</Text></View>
-            </View>
+            )}
 
             {/* REMEDIES */}
             <View style={styles.premiumCard}>

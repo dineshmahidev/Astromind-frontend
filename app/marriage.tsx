@@ -1,3 +1,4 @@
+// Force refresh
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, View, Text, ScrollView, TouchableOpacity,
@@ -9,9 +10,9 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { translations, Language } from '@/constants/translations';
 import { useLanguage } from '@/context/LanguageContext';
+import { BASE_URL } from '@/constants/Config';
 
 const { width } = Dimensions.get('window');
-const BASE_URL = 'http://10.73.33.139:8000/api';
 
 export default function MarriageScreen() {
   const router = useRouter();

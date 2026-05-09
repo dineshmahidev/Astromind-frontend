@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, Platform, Modal, ActivityIndicator } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CosmicBackground } from '@/components/CosmicBackground';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '@/context/LanguageContext';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeInUp, FadeIn, FadeOut } from 'react-native-reanimated';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_IP, BASE_URL } from '@/constants/Config';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 const QUESTION_CATEGORIES = [
+  // ... existing categories (career, love, health, wealth, family, education, travel)
   {
     id: 'career',
     title_en: 'Career & Finance',
@@ -48,11 +51,47 @@ const QUESTION_CATEGORIES = [
     ]
   },
   {
+    id: 'wealth',
+    title_en: 'Wealth & Assets',
+    title_ta: 'செல்வம் மற்றும் சொத்துக்கள்',
+    icon: 'cash',
+    color: '#a29bfe',
+    questions: [
+      { en: 'When will I buy a new house?', ta: 'நான் எப்போது புதிய வீடு வாங்குவேன்?' },
+      { en: 'Will I inherit any ancestral property?', ta: 'எனக்கு பூர்வீக சொத்து கிடைக்குமா?' },
+      { en: 'When will I be debt-free?', ta: 'நான் எப்போது கடன் சுமையிலிருந்து விடுபடுவேன்?' },
+    ]
+  },
+  {
+    id: 'family',
+    title_en: 'Family & Children',
+    title_ta: 'குடும்பம் மற்றும் குழந்தைகள்',
+    icon: 'people',
+    color: '#fab1a0',
+    questions: [
+      { en: 'When will I have children?', ta: 'எனக்கு எப்போது குழந்தை பாக்கியம் கிடைக்கும்?' },
+      { en: 'How will my relationship with my family be?', ta: 'எனது குடும்பத்துடனான உறவு எப்படி இருக்கும்?' },
+      { en: 'Will there be any auspicious events in my family?', ta: 'எனது குடும்பத்தில் ஏதேனும் சுப நிகழ்ச்சிகள் நடக்குமா?' },
+    ]
+  },
+  {
+    id: 'education',
+    title_en: 'Education & Knowledge',
+    title_ta: 'கல்வி மற்றும் அறிவு',
+    icon: 'book',
+    color: '#fdcb6e',
+    questions: [
+      { en: 'Will I succeed in my higher studies?', ta: 'எனது உயர் கல்வியில் நான் வெற்றி பெறுவேனா?' },
+      { en: 'Which field of study is best for me?', ta: 'எனக்கு எந்த கல்வித்துறை சிறந்தது?' },
+      { en: 'Will I clear my competitive exams?', ta: 'நான் போட்டித் தேர்வுகளில் வெற்றி பெறுவேனா?' },
+    ]
+  },
+  {
     id: 'travel',
     title_en: 'Travel & Abroad',
     title_ta: 'பயணம் மற்றும் வெளிநாடு',
     icon: 'airplane',
-    color: '#fab1a0',
+    color: '#55efc4',
     questions: [
       { en: 'When will I go abroad?', ta: 'நான் எப்போது வெளிநாடு செல்வேன்?' },
       { en: 'Will my visa get approved?', ta: 'எனது விசா அங்கீகரிக்கப்படுமா?' },
@@ -63,10 +102,37 @@ const QUESTION_CATEGORIES = [
 
 export default function FuturePredictScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { t, language } = useLanguage();
-  const [selectedCategory, setSelectedCategory] = useState(QUESTION_CATEGORIES[0].id);
+  const [selectedCategory, setSelectedCategory] = useState(params.cat ? String(params.cat) : QUESTION_CATEGORIES[0].id);
+  const [prediction, setPrediction] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [selectedQuestion, setSelectedQuestion] = useState("");
 
   const currentCategory = QUESTION_CATEGORIES.find(c => c.id === selectedCategory);
+
+  const fetchPrediction = async (question: string) => {
+    setSelectedQuestion(question);
+    setLoading(true);
+    try {
+      const userDataStr = await AsyncStorage.getItem('birth_details');
+      if (!userDataStr) {
+        router.push('/birth-details');
+        return;
+      }
+      const user = JSON.parse(userDataStr);
+      
+      const url = `${BASE_URL}/astrology/predict?day=${user.day}&month=${user.month}&year=${user.year}&hour=${user.hour}&minute=${user.minute}&category=${selectedCategory}&lang=${language}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      setPrediction(data);
+    } catch (error) {
+      console.error('Prediction Fetch Error:', error);
+      alert('Network error. Please check if server is running.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <CosmicBackground>
@@ -104,13 +170,7 @@ export default function FuturePredictScreen() {
             <Animated.View key={idx} entering={FadeInDown.delay(idx * 100)}>
               <TouchableOpacity 
                 style={styles.questionItem}
-                onPress={() => router.push({
-                  pathname: '/astrologer/chat',
-                  params: { 
-                    mode: 'chat',
-                    initialMessage: language === 'ta' ? q.ta : q.en
-                  }
-                })}
+                onPress={() => fetchPrediction(language === 'ta' ? q.ta : q.en)}
               >
                 <View style={[styles.questionIcon, { backgroundColor: currentCategory.color + '20' }]}>
                   <Ionicons name="help-circle" size={24} color={currentCategory.color} />
@@ -121,7 +181,10 @@ export default function FuturePredictScreen() {
             </Animated.View>
           ))}
 
-          <View style={styles.aiBanner}>
+          <TouchableOpacity 
+            style={styles.aiBanner}
+            onPress={() => router.push('/ai')}
+          >
             <Ionicons name="sparkles" size={30} color="#f1c40f" />
             <View style={{ flex: 1, marginLeft: 15 }}>
               <Text style={styles.aiBannerTitle}>
@@ -131,14 +194,84 @@ export default function FuturePredictScreen() {
                 {language === 'ta' ? 'எங்கள் அஸ்ட்ரோ AI உடன் நேரடியாகப் பேசுங்கள்' : 'Talk directly to our Astro AI'}
               </Text>
             </View>
-            <TouchableOpacity 
-              style={styles.aiBtn}
-              onPress={() => router.push('/astrologer/chat')}
-            >
+            <View style={styles.aiBtn}>
               <Text style={styles.aiBtnText}>{t.view}</Text>
-            </TouchableOpacity>
-          </View>
+            </View>
+          </TouchableOpacity>
         </ScrollView>
+
+        {/* Prediction Result Modal */}
+        <Modal
+          visible={!!prediction || loading}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPrediction(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <Animated.View entering={FadeInUp} style={styles.modalContent}>
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#6c5ce7" />
+                  <Text style={styles.loadingText}>Calculating cosmic influences...</Text>
+                </View>
+              ) : (
+                <ScrollView contentContainerStyle={styles.resultScroll}>
+                  <View style={styles.resultHeader}>
+                    <View style={[styles.categoryBadge, { backgroundColor: currentCategory?.color }]}>
+                      <Ionicons name={currentCategory?.icon as any} size={20} color="#fff" />
+                      <Text style={styles.badgeText}>{language === 'ta' ? currentCategory?.title_ta : currentCategory?.title_en}</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => setPrediction(null)} style={styles.closeBtn}>
+                      <Ionicons name="close" size={24} color="#aaa" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={styles.resultQuestion}>{selectedQuestion}</Text>
+                  
+                  <View style={styles.predictionBox}>
+                    <Ionicons name="star" size={24} color="#f1c40f" style={styles.starIcon} />
+                    <Text style={styles.predictionText}>{prediction?.prediction}</Text>
+                  </View>
+
+                  <View style={styles.influenceRow}>
+                    <View style={styles.influenceItem}>
+                      <Text style={styles.influenceLabel}>Current Dasha</Text>
+                      <Text style={styles.influenceValue}>{prediction?.dasha}</Text>
+                    </View>
+                    <View style={styles.influenceItem}>
+                      <Text style={styles.influenceLabel}>Current Bhukti</Text>
+                      <Text style={styles.influenceValue}>{prediction?.bhukti}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.explanationSection}>
+                    <Text style={styles.sectionTitleSmall}>Expert Insight</Text>
+                    <Text style={styles.explanationText}>{prediction?.human_explanation}</Text>
+                  </View>
+
+                  <View style={styles.remedyBox}>
+                    <Text style={styles.remedyLabel}>Remedy (பரிகாரம்)</Text>
+                    <Text style={styles.remedyText}>{prediction?.remedy}</Text>
+                  </View>
+
+                  <TouchableOpacity 
+                    style={styles.chatCTA}
+                    onPress={() => {
+                      setPrediction(null);
+                      router.push({
+                        pathname: '/astrologers',
+                        params: { question: selectedQuestion, charge: '10' }
+                      });
+                    }}
+                  >
+                    <Text style={styles.chatCTAText}>Ask more details (₹10/Question)</Text>
+                    <Ionicons name="arrow-forward" size={18} color="#fff" />
+                  </TouchableOpacity>
+                </ScrollView>
+              )}
+            </Animated.View>
+          </View>
+        </Modal>
       </View>
     </CosmicBackground>
   );
@@ -164,4 +297,31 @@ const styles = StyleSheet.create({
   aiBannerSub: { color: '#aaa', fontSize: 12, marginTop: 4 },
   aiBtn: { backgroundColor: '#f1c40f', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12 },
   aiBtnText: { color: '#000', fontWeight: 'bold', fontSize: 13 },
+  
+  // Modal Styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#131326', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, height: height * 0.85, borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { color: '#aaa', marginTop: 15, fontSize: 16 },
+  resultScroll: { paddingBottom: 40 },
+  resultHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  categoryBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  badgeText: { color: '#fff', fontWeight: 'bold', fontSize: 12, textTransform: 'uppercase' },
+  closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' },
+  resultQuestion: { color: '#fff', fontSize: 24, fontWeight: 'bold', marginBottom: 25, lineHeight: 32 },
+  predictionBox: { backgroundColor: 'rgba(108, 92, 231, 0.1)', padding: 25, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(108, 92, 231, 0.3)', marginBottom: 20 },
+  starIcon: { marginBottom: 15 },
+  predictionText: { color: '#fff', fontSize: 18, lineHeight: 28, fontWeight: '500' },
+  influenceRow: { flexDirection: 'row', gap: 15, marginBottom: 20 },
+  influenceItem: { flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', padding: 15, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  influenceLabel: { color: '#888', fontSize: 12, marginBottom: 5 },
+  influenceValue: { color: '#00cec9', fontSize: 16, fontWeight: 'bold' },
+  explanationSection: { marginBottom: 25 },
+  sectionTitleSmall: { color: '#6c5ce7', fontSize: 13, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
+  explanationText: { color: '#aaa', fontSize: 15, lineHeight: 24 },
+  remedyBox: { backgroundColor: 'rgba(0, 184, 148, 0.1)', padding: 20, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(0, 184, 148, 0.2)', marginBottom: 30 },
+  remedyLabel: { color: '#00b894', fontWeight: 'bold', fontSize: 14, marginBottom: 8 },
+  remedyText: { color: '#fff', fontSize: 15, lineHeight: 22 },
+  chatCTA: { backgroundColor: '#6c5ce7', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 20, borderRadius: 20 },
+  chatCTAText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
 });
