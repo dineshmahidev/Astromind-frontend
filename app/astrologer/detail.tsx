@@ -5,8 +5,9 @@ import { CosmicBackground } from '@/components/CosmicBackground';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { BASE_URL as DEFAULT_BASE_URL } from '@/constants/Config';
+
 const { width } = Dimensions.get('window');
-let BASE_URL = 'http://10.22.133.139:8000/api';
 
 type ChatMessage = {
   id: string;
@@ -20,7 +21,8 @@ export default function AstrologerDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState<any>(null);
+   const [profile, setProfile] = useState<any>(null);
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE_URL);
   const [reviews, setReviews] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({ rating: '4.9', reviews_count: 0 });
 
@@ -43,15 +45,23 @@ export default function AstrologerDetailScreen() {
   useEffect(() => {
     (async () => {
       const savedUrl = await AsyncStorage.getItem('custom_server_url');
-      if (savedUrl) BASE_URL = savedUrl;
+      let currentBaseUrl = DEFAULT_BASE_URL;
+      if (savedUrl) {
+        currentBaseUrl = savedUrl.endsWith('/api') ? savedUrl : `${savedUrl}/api`;
+        setBaseUrl(currentBaseUrl);
+      }
       const ud = await AsyncStorage.getItem('user_data');
       if (ud) setUser(JSON.parse(ud));
+      
+      // Fetch profile once URL is ready
+      fetchProfile(currentBaseUrl);
     })();
   }, []);
 
-  const fetchProfile = async () => {
+  const fetchProfile = async (apiBase?: string) => {
+    const targetUrl = apiBase || baseUrl;
     try {
-        const res = await fetch(`${BASE_URL}/astrologers/${params.id}`);
+        const res = await fetch(`${targetUrl}/astrologers/${params.id}`);
         const json = await res.json();
         if (json.success) {
             setProfile(json.data);
@@ -65,7 +75,9 @@ export default function AstrologerDetailScreen() {
     }
   };
 
-  useEffect(() => { fetchProfile(); }, [params.id]);
+  useEffect(() => { 
+    if (baseUrl !== DEFAULT_BASE_URL) fetchProfile(); 
+  }, [params.id]);
 
   const startConsultation = (mode: 'audio' | 'video' | 'chat') => {
     if (!isOnline) return Alert.alert('AstroMind', 'This astrologer is currently offline. Please try again later.');
@@ -83,11 +95,11 @@ export default function AstrologerDetailScreen() {
     try {
       if (!user) throw new Error('User not found');
       const amount = chatMode === 'video' ? 100 : (chatMode === 'audio' ? 50 : 10);
-      const payRes = await fetch(`${BASE_URL}/payment/dummy`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: user.id, amount, type: 'debit' }) });
+      const payRes = await fetch(`${baseUrl}/payment/dummy`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: user.id, amount, type: 'debit' }) });
       const payJson = await payRes.json();
       if (!payJson.success) throw new Error(payJson.message || 'Payment failed');
-
-      const sendRes = await fetch(`${BASE_URL}/consultation/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: user.id, astrologer_id: parseInt(params.id as string), question: consultQuestion, amount, is_video_call: chatMode === 'video', is_audio_call: chatMode === 'audio' }) });
+  
+      const sendRes = await fetch(`${baseUrl}/consultation/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: user.id, astrologer_id: parseInt(params.id as string), question: consultQuestion, amount, is_video_call: chatMode === 'video', is_audio_call: chatMode === 'audio' }) });
       const sendJson = await sendRes.json();
       if (sendJson.success) {
         setConsultationId(sendJson.consultation?.id);
@@ -104,7 +116,7 @@ export default function AstrologerDetailScreen() {
     const msg = text.trim(); setText('');
     setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'user', type: 'text', content: msg, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
     try {
-      await fetch(`${BASE_URL}/chat/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sender_id: user?.id, receiver_id: profile?.user_id || params.id, content: msg, type: 'text', consultation_id: consultationId || 1 }) });
+      await fetch(`${baseUrl}/chat/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sender_id: user?.id, receiver_id: profile?.user_id || params.id, content: msg, type: 'text', consultation_id: consultationId || 1 }) });
     } catch (e) { console.error(e); }
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   };

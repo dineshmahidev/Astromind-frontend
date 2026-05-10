@@ -42,7 +42,9 @@ export default function LoginScreen() {
     
     setLoading(true);
     try {
-      const response = await fetch(`${serverUrl}/api/auth/login`, {
+      let targetUrl = serverUrl.trim();
+      if (!targetUrl.startsWith('http')) targetUrl = `https://${targetUrl}`;
+      const response = await fetch(`${targetUrl}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -105,8 +107,10 @@ export default function LoginScreen() {
                 placeholderTextColor="#666" 
                 value={serverUrl}
                 onChangeText={(val) => {
-                  setServerUrl(val);
-                  AsyncStorage.setItem('custom_server_url', val);
+                  let finalVal = val.trim();
+                  setServerUrl(finalVal);
+                  if (finalVal && !finalVal.startsWith('http')) finalVal = `https://${finalVal}`;
+                  AsyncStorage.setItem('custom_server_url', finalVal);
                 }}
               />
               <TouchableOpacity style={{ marginRight: 10 }} onPress={() => {

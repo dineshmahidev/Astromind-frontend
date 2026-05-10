@@ -6,6 +6,8 @@ import { ThemedText } from '@/components/themed-text';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { BASE_URL } from '@/constants/Config';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Platform } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
 
@@ -24,12 +26,15 @@ export default function RegisterScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [lang, setLang] = useState('en');
+  const [baseUrl, setBaseUrl] = useState(BASE_URL);
   const [showPicker, setShowPicker] = useState<'date' | 'time' | 'avatar' | null>(null);
   const [timeStep, setTimeStep] = useState<'hour' | 'minute'>('hour');
   // Auto-assign a random funky avatar on screen load
   const [selectedAvatar, setSelectedAvatar] = useState(
     FUNKY_AVATARS[Math.floor(Math.random() * FUNKY_AVATARS.length)]
   );
+
+  const [dateObj, setDateObj] = useState(new Date(1995, 0, 1, 12, 0));
 
   const [form, setForm] = useState({
     name: '', email: '', password: '',
@@ -45,6 +50,14 @@ export default function RegisterScreen() {
 
   useEffect(() => {
     checkLang();
+    // Load custom server URL if overridden in Login screen
+    AsyncStorage.getItem('custom_server_url').then(val => {
+      if (val) {
+        // If the val already has /api, use it, else append it
+        const finalUrl = val.endsWith('/api') ? val : `${val}/api`;
+        setBaseUrl(finalUrl);
+      }
+    });
   }, []);
 
   const checkLang = async () => {
@@ -56,6 +69,41 @@ export default function RegisterScreen() {
     const newLang = lang === 'en' ? 'ta' : 'en';
     setLang(newLang);
     await AsyncStorage.setItem('app_lang', newLang);
+  };
+
+  const onDateChange = (event: any, selectedDate?: Date) => {
+    setShowPicker(null);
+    if (selectedDate) {
+      setDateObj(selectedDate);
+      setForm({
+        ...form,
+        day: selectedDate.getDate(),
+        month: selectedDate.getMonth() + 1,
+        year: selectedDate.getFullYear()
+      });
+    }
+  };
+
+  const onTimeChange = (event: any, selectedTime?: Date) => {
+    setShowPicker(null);
+    if (selectedTime) {
+      const newDate = new Date(dateObj);
+      newDate.setHours(selectedTime.getHours());
+      newDate.setMinutes(selectedTime.getMinutes());
+      setDateObj(newDate);
+      
+      let h = selectedTime.getHours();
+      const p = h >= 12 ? 'PM' : 'AM';
+      h = h % 12;
+      h = h ? h : 12;
+      
+      setForm({
+        ...form,
+        hour: h,
+        minute: selectedTime.getMinutes(),
+        period: p
+      });
+    }
   };
 
   const handleRegister = async () => {
@@ -71,13 +119,20 @@ export default function RegisterScreen() {
       const dob = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
       const tob = `${hour24.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
 
-      const response = await fetch(`${BASE_URL}/auth/register`, {
+      const payload = { name, email, password, dob, tob, avatar: selectedAvatar.url };
+      console.log('--- REGISTRATION ATTEMPT ---');
+      console.log('URL:', `${baseUrl}/auth/register`);
+      console.log('Payload:', JSON.stringify(payload, null, 2));
+
+      const response = await fetch(`${baseUrl}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password, dob, tob, avatar: selectedAvatar.url }),
+        body: JSON.stringify(payload),
       });
       const json = await response.json();
       
+      console.log('Server Response:', JSON.stringify(json, null, 2));
+      console.log('----------------------------');
       if (json.success) {
         await AsyncStorage.setItem('user_token', 'true');
         await AsyncStorage.setItem('user_data', JSON.stringify(json.user));
@@ -92,6 +147,7 @@ export default function RegisterScreen() {
         Alert.alert('Registration Failed', json.message);
       }
     } catch (e) {
+      console.log('Registration Error:', e);
       Alert.alert('Error', 'Server connection failed');
     } finally {
       setLoading(false);
@@ -178,31 +234,25 @@ export default function RegisterScreen() {
           </View>
         </Modal>
 
-        {/* DATE & TIME PICKER (Simplified from previous implementation) */}
-        <Modal visible={showPicker === 'date' || showPicker === 'time'} transparent animationType="fade">
-            <View style={styles.modalOverlay}>
-                <View style={[styles.pickerCard, { height: 'auto' }]}>
-                   <Text style={{ color: '#fff', fontSize: 18, textAlign: 'center', marginBottom: 20 }}>Select {showPicker}</Text>
-                   <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10, marginBottom: 20 }}>
-                       {showPicker === 'date' ? (
-                           <>
-                           <TextInput style={styles.pInput} value={form.day.toString()} onChangeText={(v) => setForm({...form, day: parseInt(v) || 1})} keyboardType="numeric" maxLength={2} />
-                           <TextInput style={styles.pInput} value={form.month.toString()} onChangeText={(v) => setForm({...form, month: parseInt(v) || 1})} keyboardType="numeric" maxLength={2} />
-                           <TextInput style={[styles.pInput, { width: 80 }]} value={form.year.toString()} onChangeText={(v) => setForm({...form, year: parseInt(v) || 1995})} keyboardType="numeric" maxLength={4} />
-                           </>
-                       ) : (
-                           <>
-                           <TextInput style={styles.pInput} value={form.hour.toString()} onChangeText={(v) => setForm({...form, hour: parseInt(v) || 12})} keyboardType="numeric" maxLength={2} />
-                           <Text style={{ color: '#fff', fontSize: 24 }}>:</Text>
-                           <TextInput style={styles.pInput} value={form.minute.toString()} onChangeText={(v) => setForm({...form, minute: parseInt(v) || 0})} keyboardType="numeric" maxLength={2} />
-                           <TouchableOpacity onPress={() => setForm({...form, period: form.period === 'AM' ? 'PM' : 'AM'})} style={styles.mBtnActive}><Text style={{ color: '#fff' }}>{form.period}</Text></TouchableOpacity>
-                           </>
-                       )}
-                   </View>
-                   <TouchableOpacity style={styles.doneBtn} onPress={() => setShowPicker(null)}><Text style={styles.doneText}>Set</Text></TouchableOpacity>
-                </View>
-            </View>
-        </Modal>
+        {showPicker === 'date' && (
+          <DateTimePicker
+            value={dateObj}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'calendar'}
+            onChange={onDateChange}
+          />
+        )}
+
+        {showPicker === 'time' && (
+          <DateTimePicker
+            value={dateObj}
+            mode="time"
+            is24Hour={false}
+            display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
+            onChange={onTimeChange}
+          />
+        )}
+
       </View>
     </CosmicBackground>
   );
@@ -230,8 +280,25 @@ const styles = StyleSheet.create({
   regText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   loginLink: { marginTop: 10, padding: 10, alignItems: 'center' },
   loginLinkText: { color: '#888', fontSize: 13 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end', alignItems: 'center' },
   pickerCard: { backgroundColor: '#0a0a1a', borderRadius: 30, padding: 25, width: '90%', borderWidth: 1, borderColor: '#6c5ce7' },
+  premiumPickerCard: { backgroundColor: '#12122b', borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 25, width: '100%', height: 450, borderWidth: 1, borderColor: 'rgba(108, 92, 231, 0.3)', shadowColor: '#6c5ce7', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.2, shadowRadius: 20 },
+  pickerIndicator: { width: 40, height: 5, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3, alignSelf: 'center', marginBottom: 15 },
+  pickerHeaderTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginBottom: 25 },
+  pickerContainer: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
+  pickerColumn: { flex: 1, alignItems: 'center' },
+  colLabel: { color: '#6c5ce7', fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 10, letterSpacing: 1 },
+  wheelItem: { height: 40, justifyContent: 'center', alignItems: 'center', width: '100%' },
+  wheelItemSelected: { backgroundColor: 'rgba(108, 92, 231, 0.15)', borderRadius: 10 },
+  wheelText: { color: 'rgba(255,255,255,0.4)', fontSize: 16 },
+  wheelTextSelected: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  periodColumn: { width: 60, justifyContent: 'center', gap: 10 },
+  periodBtn: { height: 50, borderRadius: 15, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  periodBtnActive: { backgroundColor: '#00cec9', borderColor: '#00cec9' },
+  periodBtnText: { color: '#888', fontSize: 14, fontWeight: 'bold' },
+  periodBtnTextActive: { color: '#fff' },
+  premiumDoneBtn: { backgroundColor: '#6c5ce7', height: 60, borderRadius: 20, justifyContent: 'center', alignItems: 'center', flexDirection: 'row', gap: 10, shadowColor: '#6c5ce7', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
+  premiumDoneText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   pickerTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   avatarGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 15 },

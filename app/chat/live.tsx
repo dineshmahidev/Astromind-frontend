@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ZegoUIKitPrebuiltCall, ONE_ON_ONE_VIDEO_CALL_CONFIG, ONE_ON_ONE_AUDIO_CALL_CONFIG } from '@zegocloud/zego-uikit-prebuilt-call-rn';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { BASE_URL as DEFAULT_BASE_URL } from '@/constants/Config';
 
 export default function LiveCallScreen() {
     const { consultationId, mode, name, userId: targetUserId } = useLocalSearchParams();
@@ -49,8 +50,11 @@ export default function LiveCallScreen() {
                 return;
             }
 
+            const savedUrl = await AsyncStorage.getItem('custom_server_url');
+            const baseUrl = savedUrl ? (savedUrl.endsWith('/api') ? savedUrl : `${savedUrl}/api`) : DEFAULT_BASE_URL;
+
             // Fetch Zego Config from Backend
-            const res = await fetch('http://10.22.133.139:8000/api/settings/zego');
+            const res = await fetch(`${baseUrl}/settings/zego`);
             
             // Check if response is JSON
             const contentType = res.headers.get("content-type");

@@ -18,6 +18,7 @@ export default function AstroHome() {
   const [consultations, setConsultations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [baseUrl, setBaseUrl] = useState('https://astro.90skalyanam.com/api');
 
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -78,9 +79,10 @@ export default function AstroHome() {
   const fetchDashboard = async (id: any) => {
     try {
         const customUrl = await AsyncStorage.getItem('custom_server_url');
-        const baseUrl = customUrl || 'http://10.22.133.139:8000';
+        const currentBaseUrl = customUrl ? (customUrl.endsWith('/api') ? customUrl : `${customUrl}/api`) : 'https://astro.90skalyanam.com/api';
+        setBaseUrl(currentBaseUrl);
         
-        const res = await fetch(`${baseUrl}/api/astrologer/dashboard?user_id=${id}&month=${activeMonth}&year=${activeYear}`);
+        const res = await fetch(`${currentBaseUrl}/astrologer/dashboard?user_id=${id}&month=${activeMonth}&year=${activeYear}`);
         const json = await res.json();
         if (json.success) {
             setStats(json.stats);
@@ -175,7 +177,8 @@ export default function AstroHome() {
             {consultations.length > 0 ? (
                 consultations.slice(0, 3).map((item: any) => {
                     const userAvatar = item.user?.avatar;
-                    const avatarUrl = userAvatar ? (userAvatar.startsWith('http') ? userAvatar : `http://10.22.133.139:8000/storage/${userAvatar}`) : null;
+                    const currentServer = baseUrl.replace('/api', '');
+                    const avatarUrl = userAvatar ? (userAvatar.startsWith('http') ? userAvatar : `${currentServer}/storage/${userAvatar}`) : null;
 
                     return (
                         <TouchableOpacity 

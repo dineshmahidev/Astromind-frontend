@@ -4,9 +4,9 @@ import { useRouter } from 'expo-router';
 import { CosmicBackground } from '@/components/CosmicBackground';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BASE_URL as DEFAULT_BASE_URL } from '@/constants/Config';
 
 const { width } = Dimensions.get('window');
-let BASE_URL = 'http://10.22.133.139:8000/api';
 
 const FILTERS = ['All', 'Online', 'Vedic', 'Tarot', 'Nadi', 'Vastu'];
 
@@ -14,6 +14,7 @@ import { useFocusEffect } from 'expo-router';
 
 export default function AstrologersScreen() {
   const router = useRouter();
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE_URL);
   const [search, setSearch] = useState('');
   const [selectedTab, setSelectedTab] = useState('Astrologer');
   const [activeFilter, setActiveFilter] = useState('All');
@@ -26,7 +27,6 @@ export default function AstrologersScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
-        fetchAstrologers();
         loadUserData();
     }, [])
   );
@@ -34,23 +34,33 @@ export default function AstrologersScreen() {
   const loadUserData = async () => {
     try {
         const savedUrl = await AsyncStorage.getItem('custom_server_url');
-        if (savedUrl) BASE_URL = savedUrl;
+        let currentBaseUrl = DEFAULT_BASE_URL;
+        if (savedUrl) {
+            let val = savedUrl.trim();
+            if (!val.startsWith('http')) val = `https://${val}`;
+            currentBaseUrl = val.endsWith('/api') ? val : `${val}/api`;
+            setBaseUrl(currentBaseUrl);
+        }
 
         const savedUser = await AsyncStorage.getItem('user_data');
         if (savedUser) {
             const user = JSON.parse(savedUser);
             setUserData(user);
             setWalletBalance(user.wallet_balance || '0');
-            fetchHistory(user.id);
+            fetchHistory(user.id, currentBaseUrl);
         }
+        fetchAstrologers(currentBaseUrl);
     } catch (e) {
         console.error('Load User Data Error:', e);
     }
   };
 
-  const fetchHistory = async (userId: any) => {
+  const fetchHistory = async (userId: any, apiBase?: string) => {
+    const targetUrl = apiBase || baseUrl;
+    console.log(`--- FETCH HISTORY ATTEMPT ---`);
+    console.log(`URL: ${targetUrl}/user/history?user_id=${userId}`);
     try {
-        const response = await fetch(`${BASE_URL}/user/history?user_id=${userId}`);
+        const response = await fetch(`${targetUrl}/user/history?user_id=${userId}`);
         const json = await response.json();
         if (json.success) {
             setHistoryTransactions(json.transactions);
@@ -61,10 +71,13 @@ export default function AstrologersScreen() {
     }
   };
 
-  const fetchAstrologers = async () => {
+  const fetchAstrologers = async (apiBase?: string) => {
+    const targetUrl = apiBase || baseUrl;
     setLoading(true);
+    console.log(`--- FETCH ASTROLOGERS ATTEMPT ---`);
+    console.log(`URL: ${targetUrl}/astrologers`);
     try {
-      const response = await fetch(`${BASE_URL}/astrologers`);
+      const response = await fetch(`${targetUrl}/astrologers`);
       const json = await response.json();
       if (json && json.success) {
         setAstrologers(json.data);

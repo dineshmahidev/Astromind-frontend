@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { CosmicBackground } from '@/components/CosmicBackground';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BASE_URL as DEFAULT_BASE_URL } from '@/constants/Config';
 
 const { width } = Dimensions.get('window');
 
@@ -14,11 +15,17 @@ export default function AstrologerDashboard() {
   const [loading, setLoading] = useState(true);
   const [isOnDuty, setIsOnDuty] = useState(true);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' or 'clients'
-
-  const BASE_URL = 'http://10.22.133.139:8000/api';
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE_URL);
 
   useEffect(() => {
-    loadProfile();
+    (async () => {
+      const savedUrl = await AsyncStorage.getItem('custom_server_url');
+      if (savedUrl) {
+        const finalUrl = savedUrl.endsWith('/api') ? savedUrl : `${savedUrl}/api`;
+        setBaseUrl(finalUrl);
+      }
+      loadProfile();
+    })();
   }, []);
 
   const loadProfile = async () => {
@@ -32,7 +39,7 @@ export default function AstrologerDashboard() {
 
   const fetchDashboard = async (userId: string) => {
     try {
-        const response = await fetch(`${BASE_URL}/astrologer/dashboard?user_id=${userId}`);
+        const response = await fetch(`${baseUrl}/astrologer/dashboard?user_id=${userId}`);
         const json = await response.json();
         if (json.success) {
             setDashboardData(json);
@@ -119,7 +126,8 @@ export default function AstrologerDashboard() {
                 </View>
                 {(dashboardData?.consultations || []).map((consult: any) => {
                   const userAvatar = consult.user?.avatar;
-                  const avatarUrl = userAvatar ? (userAvatar.startsWith('http') ? userAvatar : `http://10.22.133.139:8000/storage/${userAvatar}`) : null;
+                  const currentServer = baseUrl.replace('/api', '');
+                  const avatarUrl = userAvatar ? (userAvatar.startsWith('http') ? userAvatar : `${currentServer}/storage/${userAvatar}`) : null;
 
                   return (
                     <TouchableOpacity 
@@ -168,7 +176,8 @@ export default function AstrologerDashboard() {
               <Text style={styles.sectionTitle}>All Consulting Clients</Text>
               {(dashboardData?.consultations || []).map((consult: any) => {
                 const userAvatar = consult.user?.avatar;
-                const avatarUrl = userAvatar ? (userAvatar.startsWith('http') ? userAvatar : `http://10.22.133.139:8000/storage/${userAvatar}`) : null;
+                const currentServer = baseUrl.replace('/api', '');
+                const avatarUrl = userAvatar ? (userAvatar.startsWith('http') ? userAvatar : `${currentServer}/storage/${userAvatar}`) : null;
 
                 return (
                   <TouchableOpacity 

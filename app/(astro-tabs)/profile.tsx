@@ -42,9 +42,9 @@ export default function AstroProfile() {
         const parsed = JSON.parse(userData);
         
         const customUrl = await AsyncStorage.getItem('custom_server_url');
-        const baseUrl = customUrl || 'http://10.22.133.139:8000';
+        const baseUrl = customUrl ? (customUrl.endsWith('/api') ? customUrl : `${customUrl}/api`) : 'https://astro.90skalyanam.com/api';
         
-        const res = await fetch(`${baseUrl}/api/astrologer/dashboard?user_id=${parsed.id}`);
+        const res = await fetch(`${baseUrl}/astrologer/dashboard?user_id=${parsed.id}`);
         const json = await res.json();
         if (json.success && json.expert) {
             setUser({ ...parsed, ...json.expert });
@@ -62,9 +62,9 @@ export default function AstroProfile() {
     setSaving(true);
     try {
         const customUrl = await AsyncStorage.getItem('custom_server_url');
-        const baseUrl = customUrl || 'http://10.22.133.139:8000';
+        const baseUrl = customUrl ? (customUrl.endsWith('/api') ? customUrl : `${customUrl}/api`) : 'https://astro.90skalyanam.com/api';
 
-        const res = await fetch(`${baseUrl}/api/astrologer/update-profile`, {
+        const res = await fetch(`${baseUrl}/astrologer/update-profile`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 

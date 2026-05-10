@@ -4,6 +4,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CosmicBackground } from '@/components/CosmicBackground';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BASE_URL as DEFAULT_BASE_URL } from '@/constants/Config';
 
 const { width } = Dimensions.get('window');
 
@@ -35,9 +36,9 @@ export default function ChatHistoryDetail() {
   const fetchMessages = async (userId: any) => {
     try {
         const savedUrl = await AsyncStorage.getItem('custom_server_url');
-        const BASE_URL = savedUrl || 'http://10.22.133.139:8000/api';
+        const baseUrl = savedUrl ? (savedUrl.endsWith('/api') ? savedUrl : `${savedUrl}/api`) : DEFAULT_BASE_URL;
         
-        const response = await fetch(`${BASE_URL}/consultation/messages?consultation_id=${id}`);
+        const response = await fetch(`${baseUrl}/consultation/messages?consultation_id=${id}`);
         const json = await response.json();
         
         if (json.success) {

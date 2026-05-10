@@ -10,9 +10,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
 import { Audio } from 'expo-av';
+import { BASE_URL as DEFAULT_BASE_URL, SERVER_URL } from '@/constants/Config';
 
 const { width } = Dimensions.get('window');
-let BASE_URL = 'http://10.22.133.139:8000/api';
 
 type ChatMessage = {
   id: number;
@@ -29,6 +29,7 @@ export default function ChatRoomScreen() {
   const scrollRef = useRef<ScrollView>(null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE_URL);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -78,17 +79,25 @@ export default function ChatRoomScreen() {
   useEffect(() => {
     (async () => {
       const savedUrl = await AsyncStorage.getItem('custom_server_url');
-      if (savedUrl) BASE_URL = savedUrl;
+      let currentBaseUrl = DEFAULT_BASE_URL;
+      if (savedUrl) {
+        currentBaseUrl = savedUrl.endsWith('/api') ? savedUrl : `${savedUrl}/api`;
+        setBaseUrl(currentBaseUrl);
+      }
       const ud = await AsyncStorage.getItem('user_data');
       if (ud) setUser(JSON.parse(ud));
+      
+      // Initial fetch once URL is determined
+      fetchConsultationDetail(currentBaseUrl);
     })();
   }, []);
 
 
-  const fetchConsultationDetail = async () => {
+  const fetchConsultationDetail = async (apiBase?: string) => {
+    const targetUrl = apiBase || baseUrl;
     if (!consultationId) { setLoading(false); return; }
     try {
-      const res = await fetch(`${BASE_URL}/consultation/detail?consultation_id=${consultationId}`);
+      const res = await fetch(`${targetUrl}/consultation/detail?consultation_id=${consultationId}`);
       const json = await res.json();
       if (json.success) {
         setConsultation(json.consultation);
@@ -105,7 +114,7 @@ export default function ChatRoomScreen() {
   };
 
   useEffect(() => {
-    fetchConsultationDetail();
+    // Detail is now called inside the first useEffect to ensure URL is ready
     
     // Auto-trigger call if coming from start screen
     if (params.startCall === 'true' && consultationId) {
@@ -120,7 +129,7 @@ export default function ChatRoomScreen() {
     const interval = setInterval(async () => {
       if (!consultationId) return;
       try {
-        const res = await fetch(`${BASE_URL}/consultation/messages?consultation_id=${consultationId}`);
+        const res = await fetch(`${baseUrl}/consultation/messages?consultation_id=${consultationId}`);
         const json = await res.json();
         if (json.success) {
           setMessages(json.messages || []);
@@ -133,7 +142,7 @@ export default function ChatRoomScreen() {
           );
           
           if (hasUnreadIncoming) {
-            fetch(`${BASE_URL}/chat/mark-read`, {
+            fetch(`${baseUrl}/chat/mark-read`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ consultation_id: consultationId, user_id: user.id })
@@ -164,7 +173,7 @@ export default function ChatRoomScreen() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
     try {
-      await fetch(`${BASE_URL}/chat/save`, {
+      await fetch(`${baseUrl}/chat/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -287,7 +296,7 @@ export default function ChatRoomScreen() {
 
   const submitReview = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/consultation/finish`, {
+      const res = await fetch(`${baseUrl}/consultation/finish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -404,8 +413,7 @@ export default function ChatRoomScreen() {
     );
   };
 
-  return (
-    <View style={s.container}>
+  return <View style={s.container}>
       {/* Header */}
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
@@ -416,7 +424,8 @@ export default function ChatRoomScreen() {
         <View style={s.avatarContainer}>
           {(() => {
             const avatarPath = isExpert ? consultation?.user_avatar : consultation?.expert_avatar;
-            const avatarUrl = avatarPath ? (avatarPath.startsWith('http') ? avatarPath : `http://10.22.133.139:8000/storage/${avatarPath}`) : null;
+            const currentServer = baseUrl.replace('/api', '');
+            const avatarUrl = avatarPath ? (avatarPath.startsWith('http') ? avatarPath : `${currentServer}/storage/${avatarPath}`) : null;
             const isPlaceholder = !avatarUrl || avatarUrl.includes('pravatar.cc');
             
             return isPlaceholder ? (
@@ -431,10 +440,10 @@ export default function ChatRoomScreen() {
 
         <View style={{ flex: 1, marginLeft: 10 }}>
           <Text style={s.headerName} numberOfLines={1}>
-            {isExpert ? `${clientName} (${userProfile?.age || '—'} yrs)` : clientName}
+            {isExpert ? `${clientName} (${userProfile?.age || '-'} yrs)` : clientName}
           </Text>
           <Text style={s.headerStatus}>
-            {isExpert ? (userProfile?.current_dasha ? `${userProfile.current_dasha} Dasha • ${userProfile.current_bhukti} Bhukti` : 'Astrologer Panel') : 'Consultation Session'}
+            {isExpert ? (userProfile?.current_dasha ? `${userProfile.current_dasha} Dasha * ${userProfile.current_bhukti} Bhukti` : 'Astrologer Panel') : 'Consultation Session'}
           </Text>
         </View>
         
@@ -466,10 +475,9 @@ export default function ChatRoomScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Payment/Status Banner */}
       <View style={{ backgroundColor: 'rgba(108, 92, 231, 0.1)', paddingVertical: 4, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: 'rgba(108, 92, 231, 0.2)' }}>
         <Text style={{ color: '#6c5ce7', fontSize: 11, fontWeight: 'bold' }}>
-          {isExpert ? `Paid: ₹${consultation?.amount_paid || 0} • Session Active` : `Session ID: #${consultationId}`}
+          {isExpert ? `Paid: ₹${consultation?.amount_paid || 0} * Session Active` : `Session ID: #${consultationId}`}
         </Text>
       </View>
 
@@ -752,7 +760,6 @@ export default function ChatRoomScreen() {
         </View>
       )}
     </View>
-  );
 }
 
 const VoiceMessagePlayer = ({ content, isMe }: any) => {

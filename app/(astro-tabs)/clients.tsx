@@ -17,6 +17,7 @@ export default function AstroClients() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [currentLang, setCurrentLang] = useState('en');
+  const [baseUrl, setBaseUrl] = useState('https://astro.90skalyanam.com/api');
 
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -60,9 +61,10 @@ export default function AstroClients() {
         const user = JSON.parse(userData);
         
         const customUrl = await AsyncStorage.getItem('custom_server_url');
-        const baseUrl = customUrl || 'http://10.22.133.139:8000';
+        const currentBaseUrl = customUrl ? (customUrl.endsWith('/api') ? customUrl : `${customUrl}/api`) : 'https://astro.90skalyanam.com/api';
+        setBaseUrl(currentBaseUrl);
 
-        const res = await fetch(`${baseUrl}/api/astrologer/consultations?user_id=${user.id}&filter=${activeFilter}&month=${activeMonth}&year=${activeYear}&page=${pageNum}`);
+        const res = await fetch(`${currentBaseUrl}/astrologer/consultations?user_id=${user.id}&filter=${activeFilter}&month=${activeMonth}&year=${activeYear}&page=${pageNum}`);
         const json = await res.json();
         if (json.success) {
             const newData = json.data.data;
@@ -90,7 +92,8 @@ export default function AstroClients() {
 
   const renderClientItem = ({ item }: { item: any }) => {
     const userAvatar = item.user?.avatar;
-    const avatarUrl = userAvatar ? (userAvatar.startsWith('http') ? userAvatar : `http://10.22.133.139:8000/storage/${userAvatar}`) : null;
+    const currentServer = baseUrl.replace('/api', '');
+    const avatarUrl = userAvatar ? (userAvatar.startsWith('http') ? userAvatar : `${currentServer}/storage/${userAvatar}`) : null;
     const statusColor = item.status === 'open' ? '#00b894' : '#636e72';
     const statusLabel = item.status === 'open' ? t.active : t.closed;
 

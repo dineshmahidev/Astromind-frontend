@@ -4,6 +4,7 @@ import { CosmicBackground } from '@/components/CosmicBackground';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BASE_URL as DEFAULT_BASE_URL } from '@/constants/Config';
 
 export default function AstroWallet() {
   const router = useRouter();
@@ -23,7 +24,10 @@ export default function AstroWallet() {
         if (!userData) return;
         const user = JSON.parse(userData);
         
-        const res = await fetch(`http://10.22.133.139:8000/api/astrologer/wallet?user_id=${user.id}`);
+        const savedUrl = await AsyncStorage.getItem('custom_server_url');
+        const baseUrl = savedUrl ? (savedUrl.endsWith('/api') ? savedUrl : `${savedUrl}/api`) : DEFAULT_BASE_URL;
+        
+        const res = await fetch(`${baseUrl}/astrologer/wallet?user_id=${user.id}`);
         const json = await res.json();
         if (json.success) {
             setBalance(json.balance);
@@ -52,7 +56,10 @@ export default function AstroWallet() {
         const userData = await AsyncStorage.getItem('user_data');
         const user = JSON.parse(userData!);
         
-        const res = await fetch('http://10.22.133.139:8000/api/astrologer/withdraw', {
+        const savedUrl = await AsyncStorage.getItem('custom_server_url');
+        const baseUrl = savedUrl ? (savedUrl.endsWith('/api') ? savedUrl : `${savedUrl}/api`) : DEFAULT_BASE_URL;
+        
+        const res = await fetch(`${baseUrl}/astrologer/withdraw`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_id: user.id, amount: amt })

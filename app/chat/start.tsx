@@ -7,8 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '@/context/LanguageContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeIn, SlideInBottom } from 'react-native-reanimated';
-
-let BASE_URL = 'http://10.22.133.139:8000/api';
+import { BASE_URL as DEFAULT_BASE_URL } from '@/constants/Config';
 
 export default function ChatScreen() {
   const { expertId, name, mode, initialMessage, charge, expertUserId } = useLocalSearchParams();
@@ -20,7 +19,18 @@ export default function ChatScreen() {
     mode === 'video' ? 'I want to have a video consultation for detailed chart analysis.' : 
     mode === 'audio' ? 'I want to have an audio consultation.' : ''
   );
-  const [loading, setLoading] = useState(false);
+   const [loading, setLoading] = useState(false);
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE_URL);
+
+  React.useEffect(() => {
+    // Load custom server URL if overridden in Login screen
+    AsyncStorage.getItem('custom_server_url').then(val => {
+      if (val) {
+        const finalUrl = val.endsWith('/api') ? val : `${val}/api`;
+        setBaseUrl(finalUrl);
+      }
+    });
+  }, []);
 
   const isFollowUp = charge === '10';
   const amount = isFollowUp ? 10 : (mode === 'video' ? 100 : (mode === 'audio' ? 50 : 10));
@@ -33,8 +43,6 @@ export default function ChatScreen() {
 
     setLoading(true);
     try {
-      const savedUrl = await AsyncStorage.getItem('custom_server_url');
-      if (savedUrl) BASE_URL = savedUrl;
 
       const savedUser = await AsyncStorage.getItem('user_data');
       if (!savedUser) throw new Error('User not found');
@@ -45,7 +53,7 @@ export default function ChatScreen() {
       await new Promise(resolve => setTimeout(resolve, 1500));
       
       // 1. Simulate Dummy Payment
-      const payResponse = await fetch(`${BASE_URL}/payment/dummy`, {
+      const payResponse = await fetch(`${baseUrl}/payment/dummy`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -69,7 +77,7 @@ export default function ChatScreen() {
 
       if (payJson.success) {
         // 2. Submit Question
-        const sendResponse = await fetch(`${BASE_URL}/consultation/send`, {
+        const sendResponse = await fetch(`${baseUrl}/consultation/send`, {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
