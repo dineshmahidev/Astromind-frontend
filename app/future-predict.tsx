@@ -111,7 +111,7 @@ export default function FuturePredictScreen() {
 
   const currentCategory = QUESTION_CATEGORIES.find(c => c.id === selectedCategory);
 
-  const fetchPrediction = async (question: string) => {
+  const fetchPrediction = async (question: string, qIdx: number) => {
     setSelectedQuestion(question);
     setLoading(true);
     try {
@@ -122,7 +122,7 @@ export default function FuturePredictScreen() {
       }
       const user = JSON.parse(userDataStr);
       
-      const url = `${BASE_URL}/astrology/predict?day=${user.day}&month=${user.month}&year=${user.year}&hour=${user.hour}&minute=${user.minute}&category=${selectedCategory}&lang=${language}`;
+      const url = `${BASE_URL}/astrology/predict?day=${user.day}&month=${user.month}&year=${user.year}&hour=${user.hour}&minute=${user.minute}&category=${selectedCategory}&q_idx=${qIdx}&lang=${language}`;
       const response = await fetch(url);
       const data = await response.json();
       setPrediction(data);
@@ -170,7 +170,7 @@ export default function FuturePredictScreen() {
             <Animated.View key={idx} entering={FadeInDown.delay(idx * 100)}>
               <TouchableOpacity 
                 style={styles.questionItem}
-                onPress={() => fetchPrediction(language === 'ta' ? q.ta : q.en)}
+                onPress={() => fetchPrediction(language === 'ta' ? q.ta : q.en, idx)}
               >
                 <View style={[styles.questionIcon, { backgroundColor: currentCategory.color + '20' }]}>
                   <Ionicons name="help-circle" size={24} color={currentCategory.color} />

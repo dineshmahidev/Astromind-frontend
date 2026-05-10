@@ -48,6 +48,8 @@ export default function LoginScreen() {
         body: JSON.stringify({ email, password }),
       });
       const json = await response.json();
+      console.log('Login Response:', json);
+
       if (json.success) {
         setSuccessMsg('Login successful! Connecting...');
         await AsyncStorage.setItem('user_token', 'true');
@@ -73,9 +75,11 @@ export default function LoginScreen() {
             }
         }, 1000);
       } else {
+        console.error('Login Error Message:', json.message);
         setErrorMsg(json.message || 'Invalid credentials');
       }
     } catch (e) {
+      console.error('Login Fetch Exception:', e);
       setErrorMsg('Could not connect to server. Check your URL/Wi-Fi.');
     } finally {
       setLoading(false);

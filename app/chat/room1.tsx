@@ -2,12 +2,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet, View, Text, TouchableOpacity, ScrollView,
   TextInput, Image, Alert, Dimensions, ActivityIndicator,
-  KeyboardAvoidingView, Platform
+  KeyboardAvoidingView, Platform, Modal
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
 import { Audio } from 'expo-av';
 
 const { width } = Dimensions.get('window');
@@ -44,6 +45,10 @@ export default function ChatRoomScreen() {
   const [isInputLocked, setIsInputLocked] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const recordingInterval = useRef<any>(null);
+  const recordingStartRef = useRef<number>(0);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const consultationId = params.consultationId as string;
   const clientName = (params.name as string) || 'Client';
@@ -52,6 +57,9 @@ export default function ChatRoomScreen() {
 
   const isExpert = user && (user.role === 'expert' || user.role === 'astrologer' || (expertUserId && String(user.id) === String(expertUserId)));
   const isClient = user && clientId && String(user.id) === String(clientId);
+
+  // Correct receiver detection
+  const receiverId = isExpert ? parseInt(clientId) : (parseInt(expertUserId) || 0);
 
   // Debug log for roles (development only)
   useEffect(() => {
@@ -114,7 +122,24 @@ export default function ChatRoomScreen() {
       try {
         const res = await fetch(`${BASE_URL}/consultation/messages?consultation_id=${consultationId}`);
         const json = await res.json();
-        if (json.success) setMessages(json.messages || []);
+        if (json.success) {
+          setMessages(json.messages || []);
+          
+          // Mark messages as read if there are new ones for us (where we are receiver)
+          const hasUnreadIncoming = json.messages.some((m: any) => 
+            m.receiver_id === user.id && 
+            m.sender_id !== user.id && 
+            !m.is_read
+          );
+          
+          if (hasUnreadIncoming) {
+            fetch(`${BASE_URL}/chat/mark-read`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ consultation_id: consultationId, user_id: user.id })
+            });
+          }
+        }
       } catch (e) { /* silent */ }
     }, 5000);
     return () => clearInterval(interval);
@@ -129,8 +154,10 @@ export default function ChatRoomScreen() {
     const tempMsg: ChatMessage = {
       id: Date.now(),
       sender_id: user.id,
-      receiver_id: parseInt(params.clientId as string) || 0,
+      receiver_id: receiverId,
       content: finalContent, type: type,
+      duration: type === 'voice' ? recordingTime : 0,
+      is_read: 0,
       created_at: new Date().toISOString(),
     };
     setMessages(prev => [...prev, tempMsg]);
@@ -142,9 +169,10 @@ export default function ChatRoomScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sender_id: user.id,
-          receiver_id: parseInt(params.clientId as string) || 0,
+          receiver_id: receiverId,
           content: finalContent, type: type,
           consultation_id: parseInt(consultationId) || 1,
+          duration: type === 'voice' ? recordingTime : 0,
         }),
       });
     } catch (e) {
@@ -167,36 +195,85 @@ export default function ChatRoomScreen() {
     }
   };
 
+  const isRecordingRef = useRef(false);
+
   const startRecording = async () => {
+    if (isRecordingRef.current) return;
+    isRecordingRef.current = true;
+    setIsRecording(true);
+
     try {
+      // Force reset audio mode
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
       const permission = await Audio.requestPermissionsAsync();
       if (permission.status === 'granted') {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
-        });
-        const { recording } = await Audio.Recording.createAsync(
+        const { recording: newRecording } = await Audio.Recording.createAsync(
           Audio.RecordingOptionsPresets.HIGH_QUALITY
         );
-        setRecording(recording);
-        setIsRecording(true);
+        
+        setRecording(newRecording);
+        setRecordingTime(0);
+        
+        recordingStartRef.current = Date.now();
+        if (recordingInterval.current) clearInterval(recordingInterval.current);
+        recordingInterval.current = setInterval(() => {
+          const elapsed = Math.floor((Date.now() - recordingStartRef.current) / 1000);
+          setRecordingTime(elapsed);
+        }, 1000);
+      } else {
+        isRecordingRef.current = false;
+        setIsRecording(false);
       }
     } catch (err) {
       console.error('Failed to start recording', err);
+      isRecordingRef.current = false;
+      setIsRecording(false);
+      setRecording(null);
     }
   };
 
   const stopRecording = async () => {
-    if (!recording) return;
-    setIsRecording(false);
-    await recording.stopAndUnloadAsync();
-    const uri = recording.getURI();
-    setRecording(null);
+    if (!isRecordingRef.current) return;
     
-    if (uri) {
-        // In a real app, you'd upload the file. For now, we'll use URI or Mock
-        sendMessage(uri, 'voice');
-    }
+    // Small delay to ensure minimum recording time and avoid rapid toggle crash
+    setTimeout(async () => {
+      try {
+        if (recording) {
+          if (recordingInterval.current) clearInterval(recordingInterval.current);
+          
+          await recording.stopAndUnloadAsync();
+          const uri = recording.getURI();
+          const finalTime = Math.max(1, Math.floor((Date.now() - recordingStartRef.current) / 1000));
+          
+          setRecording(null);
+          setRecordingTime(0);
+          isRecordingRef.current = false;
+          setIsRecording(false);
+          
+          if (uri && finalTime >= 1) {
+              const voiceData = JSON.stringify({ uri, duration: finalTime });
+              sendMessage(voiceData, 'voice');
+          }
+        } else {
+          isRecordingRef.current = false;
+          setIsRecording(false);
+        }
+      } catch (e) {
+        console.error('Stop recording error:', e);
+        isRecordingRef.current = false;
+        setIsRecording(false);
+      }
+    }, 500); // 500ms safety buffer
+  };
+
+  const formatRecordingTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const playVoice = async (uri: string) => {
@@ -363,7 +440,7 @@ export default function ChatRoomScreen() {
         
         {/* Call Buttons (Available for both if active) */}
         <TouchableOpacity 
-          style={[s.viewAstroBtn, { backgroundColor: '#00a884', marginRight: 8 }]} 
+          style={[s.viewAstroBtn, { backgroundColor: '#6c5ce7', marginRight: 8 }]} 
           onPress={() => router.push({
             pathname: '/chat/live',
             params: { consultationId, mode: 'audio', name: clientName }
@@ -390,8 +467,8 @@ export default function ChatRoomScreen() {
       </View>
 
       {/* Payment/Status Banner */}
-      <View style={{ backgroundColor: 'rgba(0,168,132,0.1)', paddingVertical: 4, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: 'rgba(0,168,132,0.2)' }}>
-        <Text style={{ color: '#00a884', fontSize: 11, fontWeight: 'bold' }}>
+      <View style={{ backgroundColor: 'rgba(108, 92, 231, 0.1)', paddingVertical: 4, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: 'rgba(108, 92, 231, 0.2)' }}>
+        <Text style={{ color: '#6c5ce7', fontSize: 11, fontWeight: 'bold' }}>
           {isExpert ? `Paid: ₹${consultation?.amount_paid || 0} • Session Active` : `Session ID: #${consultationId}`}
         </Text>
       </View>
@@ -495,16 +572,26 @@ export default function ChatRoomScreen() {
                 <View key={msg.id} style={[s.msgRow, isMe ? s.msgRight : s.msgLeft]}>
                   <View style={[s.bubble, isMe ? s.myBubble : s.theirBubble]}>
                     {msg.type === 'image' ? (
-                      <Image source={{ uri: msg.content }} style={s.msgImage} />
-                    ) : msg.type === 'voice' ? (
-                      <TouchableOpacity style={s.voiceContainer} onPress={() => playVoice(msg.content)}>
-                        <Ionicons name="play" size={20} color="#fff" />
-                        <Text style={s.voiceText}>Voice Message</Text>
+                      <TouchableOpacity onPress={() => setSelectedImage(msg.content)}>
+                        <Image source={{ uri: msg.content }} style={s.msgImage} />
                       </TouchableOpacity>
+                    ) : msg.type === 'voice' ? (
+                      <VoiceMessagePlayer content={msg.content} isMe={isMe} />
                     ) : (
                       <Text style={s.bubbleText}>{msg.content}</Text>
                     )}
-                    <Text style={s.timeText}>{formatTime(msg.created_at)}</Text>
+                    <View style={s.bubbleFooter}>
+                      <Text style={s.timeText}>{formatTime(msg.created_at)}</Text>
+                      {isMe && (
+                        <View style={{ marginLeft: 4 }}>
+                          {msg.is_read ? (
+                            <Ionicons name="checkmark-done" size={16} color="#34b7f1" />
+                          ) : (
+                            <Ionicons name="checkmark-done" size={16} color="#8696a0" />
+                          )}
+                        </View>
+                      )}
+                    </View>
                   </View>
                 </View>
               );
@@ -514,7 +601,7 @@ export default function ChatRoomScreen() {
           {/* Session Over Banner */}
           {consultation?.status === 'closed' && (
             <View style={s.closedBanner}>
-              <Ionicons name="checkmark-circle" size={24} color="#00a884" />
+              <Ionicons name="checkmark-circle" size={24} color="#6c5ce7" />
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={s.closedTitle}>
                   {isExpert ? "Session Completed! ₹10 Received" : "Consultation Closed"}
@@ -561,7 +648,7 @@ export default function ChatRoomScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={[s.inputBar, isInputLocked && { opacity: 0.5 }]}>
             <TouchableOpacity onPress={pickImage} style={{ marginRight: 10 }} disabled={isInputLocked}>
-              <Ionicons name="image-outline" size={24} color={isInputLocked ? "#555" : "#00a884"} />
+              <Ionicons name="image-outline" size={24} color={isInputLocked ? "#555" : "#6c5ce7"} />
             </TouchableOpacity>
             <TouchableOpacity 
               onPressIn={startRecording} 
@@ -569,17 +656,25 @@ export default function ChatRoomScreen() {
               style={{ marginRight: 10 }} 
               disabled={isInputLocked}
             >
-              <Ionicons name={isRecording ? "stop-circle" : "mic"} size={24} color={isRecording ? "#ff4b2b" : (isInputLocked ? "#555" : "#00a884")} />
+              <Ionicons name={isRecording ? "stop-circle" : "mic"} size={24} color={isRecording ? "#ff4b2b" : (isInputLocked ? "#555" : "#6c5ce7")} />
             </TouchableOpacity>
-            <TextInput
-              style={s.input}
-              placeholder={isInputLocked ? "Please give feedback to continue..." : "Type reply..."}
-              placeholderTextColor="#8696a0"
-              value={text}
-              onChangeText={setText}
-              multiline
-              editable={!isInputLocked}
-            />
+            {isRecording ? (
+              <View style={s.recordingContainer}>
+                <View style={s.waveDot} />
+                <Text style={s.recordingTimeText}>Recording {formatRecordingTime(recordingTime)}</Text>
+                <Text style={s.releaseText}>Release to send</Text>
+              </View>
+            ) : (
+              <TextInput
+                style={s.input}
+                placeholder={isInputLocked ? "Please give feedback to continue..." : "Type reply..."}
+                placeholderTextColor="#8696a0"
+                value={text}
+                onChangeText={setText}
+                multiline
+                editable={!isInputLocked}
+              />
+            )}
             <TouchableOpacity 
               onPress={() => sendMessage()} 
               style={[s.sendBtn, isInputLocked && { backgroundColor: '#3b4a54' }]}
@@ -590,6 +685,40 @@ export default function ChatRoomScreen() {
           </View>
         </KeyboardAvoidingView>
       )}
+
+      {/* Image Preview Modal */}
+      <Modal
+        visible={!!selectedImage}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSelectedImage(null)}
+      >
+        <View style={s.imagePreviewOverlay}>
+          <TouchableOpacity 
+            activeOpacity={1} 
+            style={s.imagePreviewBackdrop} 
+            onPress={() => setSelectedImage(null)} 
+          />
+          <Animated.View entering={FadeInUp} style={s.imagePreviewContainer}>
+            <Image source={{ uri: selectedImage || '' }} style={s.fullImage} resizeMode="contain" />
+            <TouchableOpacity style={s.closeImageBtn} onPress={() => setSelectedImage(null)}>
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+            
+            <View style={s.imageActionRow}>
+              <TouchableOpacity style={s.imageActionBtn} onPress={() => Alert.alert('Coming Soon', 'Image download feature is being implemented.')}>
+                <Ionicons name="download-outline" size={20} color="#fff" />
+                <Text style={s.imageActionText}>Save</Text>
+              </TouchableOpacity>
+              <View style={s.divider} />
+              <TouchableOpacity style={s.imageActionBtn} onPress={() => setSelectedImage(null)}>
+                <Ionicons name="share-outline" size={20} color="#fff" />
+                <Text style={s.imageActionText}>Share</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
 
       {/* Review Modal */}
       {showReviewModal && (
@@ -626,6 +755,91 @@ export default function ChatRoomScreen() {
   );
 }
 
+const VoiceMessagePlayer = ({ content, isMe }: any) => {
+  const [playing, setPlaying] = useState(false);
+  const [currentPos, setCurrentPos] = useState(0);
+  const soundRef = useRef<Audio.Sound | null>(null);
+  
+  let uri = content;
+  let duration = 0;
+  try {
+    if (content.startsWith('{')) {
+      const data = JSON.parse(content);
+      uri = data.uri;
+      duration = data.duration;
+    }
+  } catch (e) {}
+
+  const onPlaybackStatusUpdate = (status: any) => {
+    if (status.isLoaded) {
+      setCurrentPos(Math.floor(status.positionMillis / 1000));
+      if (status.didJustFinish) {
+        setPlaying(false);
+        setCurrentPos(0);
+      }
+    }
+  };
+
+  const togglePlay = async () => {
+    try {
+      if (playing) {
+        await soundRef.current?.pauseAsync();
+        setPlaying(false);
+      } else {
+        if (soundRef.current) {
+          await soundRef.current.playFromPositionAsync(0);
+        } else {
+          const { sound } = await Audio.Sound.createAsync(
+            { uri },
+            { shouldPlay: true },
+            onPlaybackStatusUpdate
+          );
+          soundRef.current = sound;
+        }
+        setPlaying(true);
+      }
+    } catch (e) {
+      console.error('Playback error:', e);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      soundRef.current?.unloadAsync();
+    };
+  }, []);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <TouchableOpacity style={s.voiceContainer} onPress={togglePlay}>
+      <Ionicons name={playing ? "pause" : "play"} size={22} color="#fff" />
+      <View style={s.waveWrapper}>
+        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((i) => {
+          const active = playing && (i / 15) <= (currentPos / duration);
+          return (
+            <View 
+              key={i} 
+              style={[
+                s.waveBar, 
+                { height: 8 + (Math.sin(i * 0.5) * 5) + (Math.random() * 3) },
+                active && { backgroundColor: '#ffd700', transform: [{ scaleY: 1.2 }] }
+              ]} 
+            />
+          );
+        })}
+      </View>
+      <Text style={s.voiceTime}>
+        {playing || currentPos > 0 ? `${formatTime(currentPos)} / ` : ''}{formatTime(duration)}
+      </Text>
+    </TouchableOpacity>
+  );
+};
+
 const InfoItem = ({ icon, label, value }: any) => (
   <View style={s.infoItem}>
     <Ionicons name={icon} size={12} color="#6c5ce7" />
@@ -642,7 +856,7 @@ const s = StyleSheet.create({
   headerAvatar: { width: 40, height: 40, borderRadius: 20 },
   avatarPlaceholder: { backgroundColor: '#3b4a54', justifyContent: 'center', alignItems: 'center' },
   headerName: { color: '#e9edef', fontWeight: 'bold', fontSize: 16 },
-  headerStatus: { color: '#00a884', fontSize: 11 },
+  headerStatus: { color: '#6c5ce7', fontSize: 11 },
   viewAstroBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#6c5ce7', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   viewAstroText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
 
@@ -671,8 +885,10 @@ const s = StyleSheet.create({
   },
   kattamRow: { flex: 1, flexDirection: 'row' },
   msgImage: { width: 200, height: 200, borderRadius: 8, marginBottom: 5 },
-  voiceContainer: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 5 },
-  voiceText: { color: '#fff', fontSize: 14 },
+  voiceContainer: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 5, minWidth: 150 },
+  waveWrapper: { flexDirection: 'row', alignItems: 'center', gap: 2, flex: 1, height: 25 },
+  waveBar: { width: 2, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 1 },
+  voiceTime: { color: '#8696a0', fontSize: 11, fontWeight: 'bold' },
   attachBtn: { padding: 8 },
   kattamCell: { 
     flex: 1, 
@@ -738,7 +954,7 @@ const s = StyleSheet.create({
   dashaPeriod: { color: '#8696a0', fontSize: 10 },
   bhuktiList: { marginTop: 5, paddingLeft: 10, borderLeftWidth: 1, borderLeftColor: '#333' },
   bhuktiRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
-  bhuktiActive: { backgroundColor: 'rgba(0,255,136,0.1)', borderRadius: 4, paddingHorizontal: 5 },
+  bhuktiActive: { backgroundColor: 'rgba(108, 92, 231, 0.1)', borderRadius: 4, paddingHorizontal: 5 },
   bhuktiName: { color: '#8696a0', fontSize: 11 },
   bhuktiPeriod: { color: '#555', fontSize: 9 },
 
@@ -750,24 +966,29 @@ const s = StyleSheet.create({
   msgRight: { justifyContent: 'flex-end' },
   msgLeft: { justifyContent: 'flex-start' },
   bubble: { maxWidth: '85%', padding: 10, borderRadius: 12 },
-  myBubble: { backgroundColor: '#005c4b' },
+  myBubble: { backgroundColor: '#6c5ce7' },
   theirBubble: { backgroundColor: '#202c33' },
   bubbleText: { color: '#fff', fontSize: 15 },
+  bubbleFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
   timeText: { color: '#8696a0', fontSize: 10, textAlign: 'right', marginTop: 4 },
 
-  inputBar: { flexDirection: 'row', padding: 10, backgroundColor: '#202c33', alignItems: 'center' },
+  inputBar: { flexDirection: 'row', padding: 10, backgroundColor: '#202c33', alignItems: 'center', minHeight: 60 },
   input: { flex: 1, backgroundColor: '#2a3942', borderRadius: 20, color: '#fff', paddingHorizontal: 15, paddingVertical: 8, maxHeight: 100 },
-  sendBtn: { marginLeft: 10, backgroundColor: '#00a884', width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  recordingContainer: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#2a3942', borderRadius: 20, paddingHorizontal: 15, height: 40 },
+  recordingTimeText: { color: '#ff4b2b', fontSize: 14, fontWeight: 'bold', marginLeft: 10, flex: 1 },
+  releaseText: { color: '#8696a0', fontSize: 12 },
+  waveDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#ff4b2b' },
+  sendBtn: { marginLeft: 10, backgroundColor: '#6c5ce7', width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
 
   feedbackBar: { backgroundColor: '#1a2530', padding: 15, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   feedbackText: { color: '#e9edef', fontSize: 13, fontWeight: 'bold' },
-  feedbackBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#00a884', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, gap: 5 },
+  feedbackBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#6c5ce7', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, gap: 5 },
   feedbackBtnText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
   
-  closedBanner: { backgroundColor: '#1a2530', padding: 15, borderTopWidth: 1, borderTopColor: '#00a884', flexDirection: 'row', alignItems: 'center' },
+  closedBanner: { backgroundColor: '#1a2530', padding: 15, borderTopWidth: 1, borderTopColor: '#6c5ce7', flexDirection: 'row', alignItems: 'center' },
   closedTitle: { color: '#e9edef', fontSize: 14, fontWeight: 'bold' },
-  closedSub: { color: '#00a884', fontSize: 11, marginTop: 2 },
-  backToDash: { backgroundColor: '#00a884', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 10 },
+  closedSub: { color: '#6c5ce7', fontSize: 11, marginTop: 2 },
+  backToDash: { backgroundColor: '#6c5ce7', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 10 },
   backToDashText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
 
   modalOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', zIndex: 100, padding: 20 },
@@ -777,4 +998,76 @@ const s = StyleSheet.create({
   reviewInput: { backgroundColor: '#2a3942', borderRadius: 16, width: '100%', color: '#fff', padding: 15, minHeight: 120, textAlignVertical: 'top', marginBottom: 20 },
   modalBtn: { flex: 1, backgroundColor: '#6c5ce7', height: 50, borderRadius: 15, justifyContent: 'center', alignItems: 'center' },
   modalBtnText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
+
+  imagePreviewOverlay: { 
+    position: 'absolute', 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    bottom: 0, 
+    zIndex: 2000, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  imagePreviewBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+  },
+  imagePreviewContainer: {
+    width: '95%',
+    height: '85%',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 30,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  closeImageBtn: { 
+    position: 'absolute', 
+    top: 20, 
+    right: 20, 
+    zIndex: 2001, 
+    backgroundColor: 'rgba(0,0,0,0.5)', 
+    width: 50, 
+    height: 50, 
+    borderRadius: 25, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  fullImage: { 
+    width: '100%', 
+    height: '100%',
+  },
+  imageActionRow: {
+    position: 'absolute',
+    bottom: 30,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    gap: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  imageActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  imageActionText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  divider: {
+    width: 1,
+    height: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
 });

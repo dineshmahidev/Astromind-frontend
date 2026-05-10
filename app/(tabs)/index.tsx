@@ -33,21 +33,31 @@ export default function HomeScreen() {
       'https://cdn-icons-png.flaticon.com/512/4140/4140052.png',
     ];
 
-    const profileData = await AsyncStorage.getItem('user_data');
-    if (profileData) {
-      const user = JSON.parse(profileData);
-      // If no avatar, assign deterministically based on name (always same for same user)
-      if (!user.avatar && user.name) {
-        const idx = user.name.charCodeAt(0) % AVATARS.length;
-        user.avatar = AVATARS[idx];
-        await AsyncStorage.setItem('user_data', JSON.stringify(user));
+    try {
+      const profileData = await AsyncStorage.getItem('user_data');
+      const astroData = await AsyncStorage.getItem('user_astrology');
+      
+      let combined = {};
+      if (profileData) {
+        const user = JSON.parse(profileData);
+        // If no avatar, assign deterministically based on name (always same for same user)
+        if (!user.avatar && user.name) {
+          const idx = user.name.charCodeAt(0) % AVATARS.length;
+          user.avatar = AVATARS[idx];
+          await AsyncStorage.setItem('user_data', JSON.stringify(user));
+        }
+        combined = { ...user };
       }
-      setUserData(user);
-      return;
+      
+      if (astroData) {
+        const astrology = JSON.parse(astroData);
+        combined = { ...combined, ...astrology };
+      }
+      
+      setUserData(combined);
+    } catch (e) {
+      console.error('Error loading home data:', e);
     }
-    // Fallback: try old key
-    const data = await AsyncStorage.getItem('user_astrology');
-    if (data) setUserData(JSON.parse(data));
   };
 
   return (
@@ -68,26 +78,41 @@ export default function HomeScreen() {
         </Animated.View>
 
         <Animated.View entering={FadeInUp.delay(400)} style={styles.mainCard}>
-          <Ionicons name="moon" size={80} color="#f1c40f" style={styles.moonIcon} />
-          <ThemedText style={styles.cardTitle}>{userData ? t.birth_details : 'Current Moon Sign'}</ThemedText>
-          <ThemedText style={styles.cardHighlight}>
-            {userData ? userData.rasi : 'Unknown'}
-          </ThemedText>
-          <ThemedText style={styles.cardSub}>
-            {userData 
-              ? `${userData.nakshatra} - Padam ${userData.padam}` 
-              : 'Set your birth details to unlock personalized insights'}
-          </ThemedText>
+          <View style={styles.cardHeader}>
+            <View style={styles.moonOrbit}>
+              <Ionicons name="moon" size={50} color="#f1c40f" style={styles.moonIcon} />
+            </View>
+            <View>
+              <ThemedText style={styles.cardTitle}>{userData ? t.birth_details : 'Current Moon Sign'}</ThemedText>
+              <ThemedText style={styles.cardHighlight}>
+                {userData ? userData.rasi : 'Unknown'}
+              </ThemedText>
+            </View>
+          </View>
           
-          <TouchableOpacity 
-            style={styles.setupButton}
-            onPress={() => router.push('/birth-details')}
-          >
-            <ThemedText style={styles.buttonText}>
-              {userData ? t.update_details : t.set_birth_details}
-            </ThemedText>
-            <Ionicons name="chevron-forward" size={20} color="#fff" />
-          </TouchableOpacity>
+          <View style={styles.cardBody}>
+            <View style={styles.detailRow}>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>{t.nakshatra || 'Nakshatra'}</Text>
+                <Text style={styles.detailValue}>{userData?.nakshatra || '—'}</Text>
+              </View>
+              <View style={styles.detailDivider} />
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>{t.padam || 'Padam'}</Text>
+                <Text style={styles.detailValue}>{userData?.padam || '—'}</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity 
+              style={styles.setupButton}
+              onPress={() => router.push('/birth-details')}
+            >
+              <ThemedText style={styles.buttonText}>
+                {userData ? t.update_details : t.set_birth_details}
+              </ThemedText>
+              <Ionicons name="chevron-forward" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
         </Animated.View>
 
         <View style={styles.grid}>
@@ -257,51 +282,98 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#00b894',
+    backgroundColor: '#6c5ce7',
     borderWidth: 2,
     borderColor: '#070714',
   },
   mainCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 30,
-    padding: 30,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 35,
+    padding: 25,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    marginBottom: 30,
+    overflow: 'hidden',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 20,
+    marginBottom: 20,
+  },
+  moonOrbit: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(241, 196, 15, 0.1)',
+    justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    marginBottom: 30,
+    borderColor: 'rgba(241, 196, 15, 0.2)',
   },
   moonIcon: {
-    marginBottom: 20,
     textShadowColor: 'rgba(241, 196, 15, 0.5)',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 20,
+    textShadowRadius: 15,
   },
   cardTitle: {
-    color: '#aaa',
-    fontSize: 14,
+    color: '#888',
+    fontSize: 12,
     textTransform: 'uppercase',
-    letterSpacing: 2,
+    letterSpacing: 1.5,
   },
   cardHighlight: {
     color: '#fff',
-    fontSize: 40,
+    fontSize: 32,
     fontWeight: 'bold',
-    marginVertical: 10,
+    marginTop: 4,
   },
-  cardSub: {
-    color: '#888',
-    textAlign: 'center',
-    fontSize: 14,
+  cardBody: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 20,
+  },
+  detailItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  detailLabel: {
+    color: '#666',
+    fontSize: 11,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  detailValue: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  detailDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: 'rgba(255,255,255,0.1)',
   },
   setupButton: {
     backgroundColor: '#6c5ce7',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 25,
-    paddingVertical: 15,
-    borderRadius: 20,
-    gap: 10,
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 18,
+    gap: 8,
+    shadowColor: '#6c5ce7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   buttonText: {
     color: '#fff',

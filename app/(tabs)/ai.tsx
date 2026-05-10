@@ -49,9 +49,15 @@ export default function AIScreen() {
   const [userData, setUserData] = useState<any>(null);
   const scrollRef = useRef<ScrollView>(null);
 
+  const [timeLeft, setTimeLeft] = useState(300);
+  const [isLocked, setIsLocked] = useState(false);
+  const [isPro, setIsPro] = useState(false);
+  const [timerActive, setTimerActive] = useState(false);
+
   useFocusEffect(
     React.useCallback(() => {
       loadUserContext();
+      checkQuota();
     }, [])
   );
 
@@ -62,6 +68,93 @@ export default function AIScreen() {
       ]);
     }
   }, [userData, t]);
+
+  useEffect(() => {
+    let interval: any;
+    if (timerActive && timeLeft > 0 && !isPro) {
+      interval = setInterval(() => {
+        setTimeLeft(prev => {
+          const newTime = prev - 1;
+          saveUsage(newTime);
+          if (newTime <= 0) {
+            setIsLocked(true);
+            setTimerActive(false);
+            return 0;
+          }
+          return newTime;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [timerActive, isPro, timeLeft]);
+
+  const checkQuota = async () => {
+    const profileStr = await AsyncStorage.getItem('user_data');
+    let userId = null;
+    if (profileStr) {
+      const parsed = JSON.parse(profileStr);
+      userId = parsed.id;
+      if (parsed.is_pro || parsed.role === 'admin' || parsed.plan === 'pro') {
+        setIsPro(true);
+        return;
+      }
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    let usedSeconds = 0;
+
+    // 1. Check local storage first
+    const usageStr = await AsyncStorage.getItem('ai_usage');
+    if (usageStr) {
+      const usage = JSON.parse(usageStr);
+      if (usage.date === today) {
+        usedSeconds = usage.used;
+      }
+    }
+
+    // 2. Sync with backend if possible to get latest (for multi-device)
+    if (userId) {
+      try {
+        const response = await fetch(`${BASE_URL}/settings/public`); // We might need a specific endpoint or just check in ai/chat
+        // For now, let's assume we fetch from a dedicated endpoint or it's handled in the background
+        // To keep it simple and robust, I'll stick to local + update on send
+      } catch (e) {}
+    }
+
+    const remaining = 300 - usedSeconds;
+    if (remaining <= 0) {
+      setIsLocked(true);
+      setTimeLeft(0);
+    } else {
+      setTimeLeft(remaining);
+    }
+  };
+
+  const saveUsage = async (remaining: number) => {
+    const today = new Date().toISOString().split('T')[0];
+    const used = 300 - remaining;
+    await AsyncStorage.setItem('ai_usage', JSON.stringify({ date: today, used }));
+    
+    // Sync to backend
+    const profile = await AsyncStorage.getItem('user_data');
+    if (profile) {
+      const user = JSON.parse(profile);
+      if (user.id) {
+        try {
+          await fetch(`${BASE_URL}/ai/sync-quota`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: user.id,
+              used_seconds: used
+            }),
+          });
+        } catch (e) {
+          console.warn("Failed to sync quota to backend", e);
+        }
+      }
+    }
+  };
 
   const loadUserContext = async () => {
     const profile = await AsyncStorage.getItem('user_data');
@@ -76,14 +169,25 @@ export default function AIScreen() {
     setUserData(combined);
   };
 
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
   const handleSend = async (textToSend?: string) => {
     const text = textToSend || msg;
     if (!text.trim()) return;
+    if (isLocked && !isPro) {
+      Alert.alert(t.limit_reached || "Daily Limit Reached", t.limit_msg || "You have used your 5 minutes of free AI chat today. Upgrade to PRO for unlimited access.");
+      return;
+    }
 
     const userMsg: Message = { id: Date.now().toString(), text, sender: 'user', timestamp: new Date() };
     setMessages(prev => [...prev, userMsg]);
     setMsg('');
     setLoading(true);
+    setTimerActive(true); // Start timer on first message
     
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
@@ -142,6 +246,14 @@ export default function AIScreen() {
                   </View>
                 </View>
               </View>
+              
+              {!isPro && (
+                <View style={[styles.timerBadge, timeLeft < 60 && styles.timerLow]}>
+                  <Ionicons name="time-outline" size={14} color={timeLeft < 60 ? "#ff7675" : "#00cec9"} />
+                  <ThemedText style={[styles.timerText, timeLeft < 60 && styles.timerTextLow]}>{formatTime(timeLeft)}</ThemedText>
+                </View>
+              )}
+
               <TouchableOpacity onPress={() => setMessages([])}>
                 <Ionicons name="trash-outline" size={22} color="rgba(255,255,255,0.4)" />
               </TouchableOpacity>
@@ -204,6 +316,21 @@ export default function AIScreen() {
               )}
             </ScrollView>
 
+            {isLocked && !isPro && (
+              <Animated.View entering={FadeIn} style={styles.lockOverlay}>
+                <LinearGradient colors={['rgba(5,5,16,0.8)', 'rgba(5,5,16,0.98)']} style={styles.lockContent}>
+                  <Ionicons name="lock-closed" size={50} color="#6c5ce7" />
+                  <ThemedText style={styles.lockTitle}>Daily Limit Reached</ThemedText>
+                  <ThemedText style={styles.lockDesc}>You've enjoyed your 5 minutes of cosmic wisdom for today. Come back tomorrow or upgrade to PRO for unlimited chats.</ThemedText>
+                  <TouchableOpacity style={styles.proBtn} onPress={() => router.push('/profile')}>
+                    <LinearGradient colors={['#6c5ce7', '#a29bfe']} style={styles.proBtnGradient}>
+                      <ThemedText style={styles.proBtnText}>Upgrade to PRO</ThemedText>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </LinearGradient>
+              </Animated.View>
+            )}
+
             <View style={styles.bottomArea}>
               <ScrollView 
                 horizontal 
@@ -227,11 +354,12 @@ export default function AIScreen() {
                     value={msg}
                     onChangeText={setMsg}
                     multiline
+                    editable={!isLocked || isPro}
                   />
                   <TouchableOpacity 
-                    style={[styles.sendButton, !msg.trim() && styles.disabledSend]} 
+                    style={[styles.sendButton, (!msg.trim() || (isLocked && !isPro)) && styles.disabledSend]} 
                     onPress={() => handleSend()}
-                    disabled={!msg.trim() || loading}
+                    disabled={!msg.trim() || loading || (isLocked && !isPro)}
                   >
                     <LinearGradient
                       colors={msg.trim() ? ['#6c5ce7', '#00cec9'] : ['#222', '#333']}
@@ -300,5 +428,18 @@ const styles = StyleSheet.create({
   input: { flex: 1, color: '#fff', fontSize: 16, maxHeight: 120, paddingVertical: 10 },
   sendButton: { marginLeft: 10 },
   sendIconGradient: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
-  disabledSend: { opacity: 0.5 }
+  disabledSend: { opacity: 0.5 },
+  
+  timerBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(0, 206, 201, 0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 15, borderWidth: 1, borderColor: 'rgba(0, 206, 201, 0.2)' },
+  timerLow: { backgroundColor: 'rgba(255, 118, 117, 0.1)', borderColor: 'rgba(255, 118, 117, 0.2)' },
+  timerText: { color: '#00cec9', fontSize: 13, fontWeight: 'bold', fontVariant: ['tabular-nums'] },
+  timerTextLow: { color: '#ff7675' },
+  
+  lockOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 100, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  lockContent: { width: '100%', padding: 40, borderRadius: 30, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  lockTitle: { color: '#fff', fontSize: 24, fontWeight: 'bold', marginTop: 20, marginBottom: 15 },
+  lockDesc: { color: '#aaa', fontSize: 15, lineHeight: 24, textAlign: 'center', marginBottom: 30 },
+  proBtn: { width: '100%' },
+  proBtnGradient: { paddingVertical: 18, borderRadius: 15, alignItems: 'center' },
+  proBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
 });

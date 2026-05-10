@@ -16,9 +16,9 @@ const LANGUAGES = [
 ];
 
 const UI_STRINGS: Record<string, any> = {
-  en: { title: 'Daily Horoscope', luck: 'Luck-o-meter', timings: 'Auspicious Timings', panch: 'Panchangam', guidance: 'Daily Guidance', remedies: 'Remedies', sani: 'Sani Report', career: 'Career', wealth: 'Wealth', love: 'Love', health: 'Health', rahu: 'Rahu Kaalam', yama: 'Yamagandam', gulika: 'Gulikai', mantra: 'Mantra', color: 'Lucky Color', number: 'Lucky Number', selectLang: 'Language' },
-  ta: { title: 'தினசரி பலன்கள்', luck: 'அதிர்ஷ்ட மீட்டர்', timings: 'முக்கிய நேரங்கள்', panch: 'பஞ்சாங்கம்', guidance: 'தினசரி வழிகாட்டுதல்', remedies: 'பரிகாரங்கள்', sani: 'சனி பெயர்ச்சி', career: 'தொழில்', wealth: 'செல்வம்', love: 'அன்பு', health: 'ஆரோக்கியம்', rahu: 'ராகு காலம்', yama: 'எமகண்டம்', gulika: 'குளிகை', mantra: 'மந்திரம்', color: 'அதிர்ஷ்ட நிறம்', number: 'அதிர்ஷ்ட எண்', selectLang: 'மொழி' },
-  hi: { title: 'दैनिक राशिफल', luck: 'भाग्य मीटर', timings: 'शुभ समय', panch: 'पंचांग', guidance: 'दैनिक मार्गदर्शन', remedies: 'उपाय', sani: 'शनि रिपोर्ट', career: 'करियर', wealth: 'धन', love: 'प्रेम', health: 'स्वास्थ्य', rahu: 'राहु काल', yama: 'यमगंडम', gulika: 'गुलिका', mantra: 'मंत्र', color: 'शुभ रंग', number: 'शुभ अंक', selectLang: 'भाषा' }
+  en: { title: 'Daily Horoscope', luck: 'Luck-o-meter', timings: 'Auspicious Timings', panch: 'Panchangam', guidance: 'Daily Guidance', remedies: 'Remedies', sani: 'Sani Report', career: 'Career', wealth: 'Wealth', love: 'Love', health: 'Health', rahu: 'Rahu Kaalam', yama: 'Yamagandam', gulika: 'Gulikai', mantra: 'Mantra', color: 'Lucky Color', number: 'Lucky Number', selectLang: 'Language', taraBala: 'Thinasa Palan', taraName: 'Tara Bala', taraEffect: 'Effect', transit: 'Planet Transits', yoga: 'Yoga', karana: 'Karana' },
+  ta: { title: 'தினசரி பலன்கள்', luck: 'அதிர்ஷ்ட மீட்டர்', timings: 'முக்கிய நேரங்கள்', panch: 'பஞ்சாங்கம்', guidance: 'தினசரி வழிகாட்டுதல்', remedies: 'பரிகாரங்கள்', sani: 'சனி பெயர்ச்சி', career: 'தொழில்', wealth: 'செல்வம்', love: 'அன்பு', health: 'ஆரோக்கியம்', rahu: 'ராகு காலம்', yama: 'எமகண்டம்', gulika: 'குளிகை', mantra: 'மந்திரம்', color: 'அதிர்ஷ்ட நிறம்', number: 'அதிர்ஷ்ட எண்', selectLang: 'மொழி', taraBala: 'தினச பலன்', taraName: 'தார பலன்', taraEffect: 'பலன்', transit: 'கிரக சஞ்சாரம்', yoga: 'யோகம்', karana: 'கரணம்' },
+  hi: { title: 'दैनिक राशिफल', luck: 'भाग्य मीटर', timings: 'शुभ समय', panch: 'पंचांग', guidance: 'दैनिक मार्गदर्शन', remedies: 'उपाय', sani: 'शनि रिपोर्ट', career: 'करियर', wealth: 'धन', love: 'प्रेम', health: 'स्वास्थ्य', rahu: 'राहु काल', yama: 'यमगंडम', gulika: 'गुलिका', mantra: 'मंत्र', color: 'शुभ रंग', number: 'शुभ अंक', selectLang: 'भाषा', taraBala: 'दिनसा फल', taraName: 'तारा बल', taraEffect: 'प्रभाव', transit: 'ग्रह गोचर', yoga: 'योग', karana: 'करण' }
 };
 
 export default function HoroscopeScreen() {
@@ -56,7 +56,8 @@ export default function HoroscopeScreen() {
       
       if (detailsJson.success) {
         const rasiIdx = detailsJson.data.rasi_idx;
-        const hRes = await fetch(`${BASE_URL}/astrology/horoscope?sign_idx=${rasiIdx}&period=${targetPeriod}&lang=${targetLang}`);
+        const starIdx = detailsJson.data.nakshatra_idx;
+        const hRes = await fetch(`${BASE_URL}/astrology/horoscope?sign_idx=${rasiIdx}&period=${targetPeriod}&lang=${targetLang}&birth_star_idx=${starIdx}`);
         const hJson = await hRes.json();
         if (hJson.success) setHoroscope(hJson.data);
       }
@@ -131,8 +132,46 @@ export default function HoroscopeScreen() {
               <Text style={styles.cardHeader}>🔮 {horoscope.sign}</Text>
               <Text style={styles.predictionText}>{horoscope.prediction}</Text>
               <View style={styles.divider} />
+              <Text style={styles.sectionSubHeader}>🪐 {s.transit}</Text>
               <Text style={styles.transitText}>✨ {horoscope.transit_analysis}</Text>
             </View>
+
+            {/* TARA BALA - NEW */}
+            {horoscope.tara_bala && (
+              <View style={[styles.premiumCard, { borderColor: '#6c5ce7', backgroundColor: 'rgba(108, 92, 231, 0.05)' }]}>
+                <Text style={[styles.cardHeader, { color: '#6c5ce7' }]}>⭐ {s.taraBala}</Text>
+                <View style={styles.taraRow}>
+                  <View style={styles.taraBadge}>
+                    <Text style={styles.taraLabel}>{s.taraName}</Text>
+                    <Text style={styles.taraValue}>{horoscope.tara_bala.name}</Text>
+                  </View>
+                  <View style={styles.taraBadge}>
+                    <Text style={styles.taraLabel}>{s.taraEffect}</Text>
+                    <Text style={[styles.taraValue, { color: '#00cec9' }]}>{horoscope.tara_bala.effect}</Text>
+                  </View>
+                </View>
+                <Text style={styles.taraDesc}>{horoscope.tara_bala.desc}</Text>
+              </View>
+            )}
+
+            {/* MONTHLY TIMELINE - New Section */}
+            {period === 'monthly' && horoscope.monthly_timeline && (
+              <View style={{ marginBottom: 20 }}>
+                <Text style={styles.sectionHeader}>📅 {lang === 'ta' ? 'மாதாந்திர காலவரிசை' : (lang === 'hi' ? 'मासिक समयरेखा' : 'Monthly Timeline')}</Text>
+                {horoscope.monthly_timeline.map((item: any, idx: number) => (
+                  <View key={idx} style={styles.timelineItem}>
+                    <View style={styles.timelinePoint}>
+                      <View style={styles.timelineCircle} />
+                      {idx < horoscope.monthly_timeline.length - 1 && <View style={styles.timelineLine} />}
+                    </View>
+                    <View style={styles.timelineContent}>
+                      <Text style={styles.timelineTitle}>{item.title}</Text>
+                      <Text style={styles.timelineDesc}>{item.desc}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
 
             {/* TIMINGS */}
             {horoscope.timings && (
@@ -162,11 +201,24 @@ export default function HoroscopeScreen() {
             <View style={styles.horizontalScroll}>
               <View style={styles.smallCard}>
                 <Text style={styles.smallCardHeader}>📜 {s.panch}</Text>
-                <Text style={styles.smallCardText}>{horoscope.panchangam.tithi} | {horoscope.panchangam.nakshatra}</Text>
+                <View style={styles.panchRow}>
+                  <Text style={styles.panchLabel}>Tithi:</Text>
+                  <Text style={styles.panchVal}>{horoscope.panchangam.tithi}</Text>
+                </View>
+                <View style={styles.panchRow}>
+                  <Text style={styles.panchLabel}>Star:</Text>
+                  <Text style={styles.panchVal}>{horoscope.panchangam.nakshatra}</Text>
+                </View>
+                <View style={styles.panchRow}>
+                  <Text style={styles.panchLabel}>{s.yoga}:</Text>
+                  <Text style={styles.panchVal}>{horoscope.panchangam.yoga}</Text>
+                </View>
               </View>
               <View style={[styles.smallCard, { backgroundColor: 'rgba(255, 118, 117, 0.1)' }]}>
                 <Text style={[styles.smallCardHeader, { color: '#ff7675' }]}>🪐 {s.sani}</Text>
                 <Text style={styles.smallCardText}>{horoscope.sani_report}</Text>
+                <View style={styles.dividerSmall} />
+                <Text style={styles.smallCardText}>{horoscope.transit_analysis}</Text>
               </View>
             </View>
 
@@ -204,6 +256,7 @@ const styles = StyleSheet.create({
   activePeriodTabText: { color: '#fff' },
   premiumCard: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 30, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   cardHeader: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 20 },
+  sectionSubHeader: { color: '#6c5ce7', fontSize: 14, fontWeight: 'bold', marginBottom: 10 },
   progressContainer: { marginBottom: 15 },
   progressLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
   progressLabel: { color: '#aaa', fontSize: 13 },
@@ -212,7 +265,20 @@ const styles = StyleSheet.create({
   progressFill: { height: '100%', borderRadius: 3 },
   predictionText: { color: '#fff', fontSize: 16, lineHeight: 26, marginBottom: 15 },
   divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: 15 },
-  transitText: { color: '#6c5ce7', fontSize: 14, fontStyle: 'italic' },
+  transitText: { color: '#ccc', fontSize: 14, fontStyle: 'italic', lineHeight: 20 },
+  taraRow: { flexDirection: 'row', gap: 10, marginBottom: 15 },
+  taraBadge: { flex: 1, backgroundColor: 'rgba(108, 92, 231, 0.1)', padding: 10, borderRadius: 15, alignItems: 'center' },
+  taraLabel: { color: '#6c5ce7', fontSize: 10, marginBottom: 4, textTransform: 'uppercase' },
+  taraValue: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
+  taraDesc: { color: '#ddd', fontSize: 14, lineHeight: 22 },
+  sectionHeader: { color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 20, marginLeft: 5 },
+  timelineItem: { flexDirection: 'row', minHeight: 100 },
+  timelinePoint: { width: 30, alignItems: 'center' },
+  timelineCircle: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#6c5ce7', marginTop: 6 },
+  timelineLine: { width: 2, flex: 1, backgroundColor: 'rgba(108, 92, 231, 0.3)', marginVertical: 4 },
+  timelineContent: { flex: 1, paddingLeft: 10, paddingBottom: 25 },
+  timelineTitle: { color: '#fff', fontSize: 17, fontWeight: 'bold', marginBottom: 8 },
+  timelineDesc: { color: '#ccc', fontSize: 14, lineHeight: 22 },
   timingRow: { flexDirection: 'row', gap: 15, marginBottom: 15 },
   timingBox: { flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 15 },
   timingBoxFull: { backgroundColor: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 15 },
@@ -227,9 +293,13 @@ const styles = StyleSheet.create({
   ritualBox: { backgroundColor: 'rgba(255,255,255,0.05)', padding: 15, borderRadius: 20 },
   ritualText: { color: '#ccc', fontSize: 14, textAlign: 'center' },
   horizontalScroll: { flexDirection: 'row', gap: 15 },
-  smallCard: { flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 25, padding: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-  smallCardHeader: { color: '#00cec9', fontSize: 14, fontWeight: 'bold', marginBottom: 8 },
+  smallCard: { flex: 1, minWidth: width * 0.45, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 25, padding: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  smallCardHeader: { color: '#00cec9', fontSize: 14, fontWeight: 'bold', marginBottom: 12 },
   smallCardText: { color: '#aaa', fontSize: 12, lineHeight: 18 },
+  panchRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  panchLabel: { color: '#666', fontSize: 11 },
+  panchVal: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
+  dividerSmall: { height: 1, backgroundColor: 'rgba(255,255,255,0.05)', marginVertical: 10 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
   dropdownModal: { backgroundColor: '#1a1a2e', width: '80%', borderRadius: 25, padding: 20, borderWidth: 1, borderColor: '#6c5ce7' },
   modalTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
